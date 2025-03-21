@@ -19,9 +19,9 @@ class BaseRunner:
         accelerate.utils.set_seed(fix_seed)
 
         self.config = config
-        self.data = create_data(config)
+        self.traj_data, _ = create_data(config)
         self.model = create_model(config)
-        self.dataset = create_dataset(config, self.data)
+        self.dataset = create_dataset(config, self.traj_data)
         self.accelerator = accelerate.Accelerator(step_scheduler_with_optimizer=False)
         self.trainer = create_trainer(config, self.accelerator, self.model, self.dataset)
 

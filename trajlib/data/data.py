@@ -5,7 +5,19 @@ from trajlib.data.trajectory import Trajectory, GPSTrajectory, GridTrajectory
 
 
 class TrajData:
-    trajectories: list[Trajectory] = None
+    def __init__(self, trajectories):
+        self.trajectories: list[Trajectory] = trajectories
+
+
+class GPSTrajData(TrajData):
+    def __init__(self, trajectories):
+        super().__init__([GPSTrajectory(i, *traj) for i, traj in enumerate(trajectories)])
+
+
+class GridTrajData(TrajData):
+    def __init__(self, trajectories, grid: SimpleGridSystem):
+        super().__init__([GridTrajectory(i, *traj, grid) for i, traj in enumerate(trajectories)])
+        self.grid = grid
 
 
 class GraphData:
@@ -16,28 +28,9 @@ class GraphData:
         raise NotImplementedError()
 
 
-class GPSData(TrajData):
-    def __init__(self, trajectories):
-        self.trajectories = [GPSTrajectory(i, *traj) for i, traj in enumerate(trajectories)]
-
-
-class GridData(TrajData, GraphData):
-    def __init__(self, trajectories, step=100):
-        self.coord_trajs = [traj[0] for traj in trajectories]
-        self.grid = self._build_grid(step)
-        self.trajectories = [GridTrajectory(i, *traj, self.grid) for i, traj in enumerate(trajectories)]
-
-    def _build_grid(self, step):
-        all_lons = [p[0] for t in self.coord_trajs for p in t]
-        all_lats = [p[1] for t in self.coord_trajs for p in t]
-        min_lon, max_lon = min(all_lons), max(all_lons)
-        min_lat, max_lat = min(all_lats), max(all_lats)
-
-        boundary_original = trajdl_cpp.RectangleBoundary(min_x=min_lon, min_y=min_lat, max_x=max_lon, max_y=max_lat)
-        boundary = boundary_original.to_web_mercator()
-
-        grid = SimpleGridSystem(boundary, step_x=step, step_y=step)
-        return grid
+class GridGraphData(GraphData):
+    def __init__(self, grid: SimpleGridSystem):
+        self.grid = grid
 
     def get_nodes(self):
         return list(range(len(self.grid)))

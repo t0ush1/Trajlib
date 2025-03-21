@@ -38,7 +38,9 @@ def create_embedding(config):
                 embeddings = pickle.load(f)
             return nn.Embedding.from_pretrained(embeddings=embeddings, freeze=True)
         elif model_config["embedding"] == "gat":
-            pass  # TODO
+            pass  # TODO 独立训练
+        elif model_config["embedding"] == "gcn":
+            pass  #
 
 
 def create_task_head(config):
