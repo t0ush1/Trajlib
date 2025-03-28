@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from torch_geometric.data import Data as GeoData
 from accelerate import Accelerator
 from tqdm import tqdm
 
@@ -10,10 +11,11 @@ from trajlib.runner.utils.early_stopping import EarlyStopping
 
 
 class BaseTrainer:
-    def __init__(self, trainer_config, accelerator: Accelerator, model: nn.Module, dataset):
+    def __init__(self, trainer_config, accelerator: Accelerator, model: nn.Module, dataset, geo_data: GeoData):
         self.trainer_config = trainer_config
         self.accelerator = accelerator
         self.model = model
+        self.geo_data = geo_data
 
         train_dataset, val_dataset, test_dataset = dataset
         self.train_loader = DataLoader(train_dataset, batch_size=trainer_config["batch_size"], shuffle=False)
@@ -55,7 +57,7 @@ class BaseTrainer:
         ):
             x_loc = x_loc.to(self.accelerator.device)
             y_loc = y_loc.to(self.accelerator.device)
-            output = self.model(x_loc)
+            output = self.model(x_loc, self.geo_data)
 
             loss = self.criterion(output.squeeze(1), y_loc.squeeze(1).long())
             self.optimizer.zero_grad()
@@ -73,7 +75,7 @@ class BaseTrainer:
             for x_loc, x_ts, y_loc, y_ts in self.val_loader:
                 x_loc = x_loc.to(self.accelerator.device)
                 y_loc = y_loc.to(self.accelerator.device)
-                output = self.model(x_loc)
+                output = self.model(x_loc, self.geo_data)
 
                 preds, trues = self.accelerator.gather_for_metrics([output, y_loc])
                 loss = self.criterion(preds.squeeze(1), trues.squeeze(1).long())
@@ -89,7 +91,7 @@ class BaseTrainer:
             for x_loc, x_ts, y_loc, y_ts in self.test_loader:
                 x_loc = x_loc.to(self.accelerator.device)
                 y_loc = y_loc.to(self.accelerator.device)
-                output = self.model(x_loc)
+                output = self.model(x_loc, self.geo_data)
 
                 preds, trues = self.accelerator.gather_for_metrics([output, y_loc])
                 all_preds.append(preds)

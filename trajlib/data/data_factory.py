@@ -31,6 +31,6 @@ def create_data(config):
         grid = build_grid([traj[0] for traj in raw_data], step=data_config["grid_step"])
         traj_data = GridTrajData(raw_data, grid)
         graph_data = GridGraphData(grid)
-        config["model_config"]["vocab_size"] = len(grid)
+        data_config["vocab_size"] = len(grid)
 
     return traj_data, graph_data
