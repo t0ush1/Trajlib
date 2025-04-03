@@ -2,7 +2,7 @@ import numpy as np
 
 from trajdl.grid import SimpleGridSystem
 from trajdl import trajdl_cpp
-
+from trajlib.data.RoadNetSystem import RoadNetSystem
 
 class Trajectory:
     def __init__(self, traj_id, locations, timestamps):
@@ -29,3 +29,9 @@ class GridTrajectory(Trajectory):
             self.grid_locations.append(int(loc))
             self.grid_coordinates.append(grid.to_grid_coordinate(loc))
         super().__init__(traj_id, self.grid_locations, timestamps)
+
+class RoadNetTrajectory(Trajectory):
+    def __init__(self, traj_id, coordinates, timestamps, road_net: RoadNetSystem):
+        osmids, _, timestamps = road_net.get_road_osmids_for_points(coordinates=coordinates, timestamps=timestamps)
+        # print("RoadNetTrajectory:", len(osmids), len(timestamps))
+        super().__init__(traj_id, osmids, timestamps)

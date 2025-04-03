@@ -41,6 +41,12 @@ def create_embedding(config):
             pass  # TODO 独立训练
         elif model_config["embedding"] == "gcn":
             pass  #
+        
+    elif data_config["data_form"] == "roadnet":
+        if model_config["embedding"] == "node2vec":
+            with open(model_config["embs_path"], "rb") as f:
+                embeddings = pickle.load(f)
+            return nn.Embedding.from_pretrained(embeddings=embeddings, freeze=True)
 
 
 def create_task_head(config):
@@ -50,6 +56,8 @@ def create_task_head(config):
     if data_config["data_form"] == "gps":
         return nn.Linear(model_config["d_model"], 2)
     elif data_config["data_form"] == "grid":
+        return nn.Linear(model_config["d_model"], model_config["vocab_size"])
+    elif data_config["data_form"] == "roadnet":
         return nn.Linear(model_config["d_model"], model_config["vocab_size"])
 
 
