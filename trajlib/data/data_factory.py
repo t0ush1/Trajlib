@@ -33,6 +33,7 @@ def create_data(config):
         grid = build_grid([traj[0] for traj in raw_data], step=data_config["grid_step"])
         traj_data = GridTrajData(raw_data, grid)
         graph_data = GridGraphData(grid)
+<<<<<<< HEAD
         config["model_config"]["vocab_size"] = len(grid)
     elif data_config["data_form"] == "roadnet":
         all_points = np.array([point for trajectory in raw_data for point in trajectory[0]])
@@ -49,5 +50,8 @@ def create_data(config):
         traj_data = RoadNetTrajData(raw_data, road_net)
         graph_data = RoadNetGraphData(road_net)
         config["model_config"]["vocab_size"] = road_net.edge_num
+=======
+        data_config["vocab_size"] = len(grid)
+>>>>>>> d46ad5d9cc834b3e78370095a479189c6a674282
 
     return traj_data, graph_data

@@ -1,8 +1,16 @@
 from trajdl import trajdl_cpp
 from trajdl.grid import SimpleGridSystem
+<<<<<<< HEAD
 import bisect
 from trajlib.data.trajectory import Trajectory, GPSTrajectory, GridTrajectory, RoadNetTrajectory
 from trajlib.data.RoadNetSystem import RoadNetSystem
+=======
+import torch
+from torch_geometric.data import Data as GeoData
+
+from trajlib.data.trajectory import Trajectory, GPSTrajectory, GridTrajectory
+
+>>>>>>> d46ad5d9cc834b3e78370095a479189c6a674282
 
 class TrajData:
     def __init__(self, trajectories):
@@ -27,21 +35,35 @@ class RoadNetTrajData(TrajData):
 
 
 class GraphData:
-    def get_nodes(self):
-        raise NotImplementedError()
+    def __init__(self, nodes, neighbors, features):
+        self.nodes: list[int] = nodes
+        self.neighbors: list[list[int]] = neighbors
+        self.features: list[list[float]] = features
 
-    def get_neighbors(self, node):
-        raise NotImplementedError()
+    def to_geo_data(self, index_as_features=True) -> GeoData:
+        if index_as_features:
+            x = torch.tensor(self.nodes)
+        else:
+            x = torch.tensor(self.features).float()
+        edge_index = []
+        for node in self.nodes:
+            for neighbor in self.neighbors[node]:
+                edge_index.append([node, neighbor])
+        edge_index = torch.tensor(edge_index).t()
+        return GeoData(x=x, edge_index=edge_index)
 
 
 class GridGraphData(GraphData):
     def __init__(self, grid: SimpleGridSystem):
         self.grid = grid
+        nodes = list(range(len(self.grid)))
+        super().__init__(
+            nodes=nodes,
+            neighbors=[self.__get_neighbors__(node) for node in nodes],
+            features=[self.__get_features__(node) for node in nodes],
+        )
 
-    def get_nodes(self):
-        return list(range(len(self.grid)))
-
-    def get_neighbors(self, node):
+    def __get_neighbors__(self, node):
         neighbors = []
         x, y = self.grid.to_grid_coordinate(str(node))
         for dx, dy in [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]:
@@ -51,6 +73,7 @@ class GridGraphData(GraphData):
                 neighbors.append(int(nloc))
         return neighbors
 
+<<<<<<< HEAD
 class RoadNetGraphData(GraphData):
     def __init__(self, road_net: RoadNetSystem):
         self.road_net = road_net
@@ -96,3 +119,8 @@ class RoadNetGraphData(GraphData):
         if node in neighbors:
             neighbors.remove(node)
         return neighbors
+=======
+    def __get_features__(self, node):
+        x, y = self.grid.to_grid_coordinate(str(node))
+        return self.grid.get_centroid_of_grid(x, y)
+>>>>>>> d46ad5d9cc834b3e78370095a479189c6a674282

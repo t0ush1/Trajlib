@@ -19,22 +19,24 @@ class BaseRunner:
         accelerate.utils.set_seed(fix_seed)
 
         self.config = config
-        self.traj_data, _ = create_data(config)
-        self.model = create_model(config)
-        self.dataset = create_dataset(config, self.traj_data)
         self.accelerator = accelerate.Accelerator(step_scheduler_with_optimizer=False)
-        self.trainer = create_trainer(config, self.accelerator, self.model, self.dataset)
+        traj_data, graph_data = create_data(config)
+        self.model = create_model(config)
+        self.dataset = create_dataset(config, traj_data)
+        if graph_data is not None and not config["embedding_config"]["pre-trained"]:
+            self.geo_data = graph_data.to_geo_data().to(self.accelerator.device)
+        else:
+            self.geo_data = None
+        self.trainer = create_trainer(config, self.accelerator, self.model, self.dataset, self.geo_data)
 
         if self.accelerator.is_local_main_process:
             wandb_config = {
                 "data_name": config["data_config"]["data_name"],
                 "data_form": config["data_config"]["data_form"],
                 "task_name": config["task_config"]["task_name"],
-                "d_model": config["model_config"]["d_model"],
-                "num_layers": config["model_config"]["num_layers"],
-                "num_heads": config["model_config"]["num_heads"],
+                "emb_dim": config["embedding_config"]["emb_dim"],
             }
-            wandb.init(project=config["model_config"]["encoder"], config=wandb_config)
+            wandb.init(project=config["encoder_config"]["encoder_name"], config=wandb_config)
 
     def run(self):
         for epoch in range(self.config["trainer_config"]["num_epochs"]):
