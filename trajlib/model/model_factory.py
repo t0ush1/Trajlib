@@ -6,7 +6,7 @@ from torch_geometric.data import Data as GeoData
 
 from trajlib.model.transformer import Transformer
 from trajlib.model.positional_encoding import PositionalEncoding
-from trajlib.model.embedding.gat import GATWithEmbedding
+from trajlib.model.embedding.gnn import GNNWithEmbedding
 
 
 class TrajTransformer(nn.Module):
@@ -47,10 +47,8 @@ def create_embedding(config):
 
         if embedding_config["emb_name"] == "normal":
             return nn.Embedding(vocab_size, emb_dim)
-        elif embedding_config["emb_name"] == "gat":
-            return GATWithEmbedding(vocab_size, emb_dim)
-        elif embedding_config["emb_name"] == "gcn":
-            pass
+        elif embedding_config["emb_name"] in ["gat", "gcn"]:
+            return GNNWithEmbedding(vocab_size, emb_dim)
 
 
 def create_task_head(config):
