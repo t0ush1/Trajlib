@@ -21,55 +21,88 @@ class BaseRunner:
         self.config = config
         self.accelerator = accelerate.Accelerator(step_scheduler_with_optimizer=False)
         traj_data, graph_data = create_data(config)
-        self.model = create_model(config)
         self.dataset = create_dataset(config, traj_data)
-        if graph_data is not None and not config["embedding_config"]["pre-trained"]:
-            self.geo_data = graph_data.to_geo_data().to(self.accelerator.device)
-        else:
-            self.geo_data = None
+        self.geo_data = (
+            graph_data.to_geo_data().to(self.accelerator.device)
+            if graph_data is not None
+            and not config["embedding_config"]["pre-trained"]
+            and config["embedding_config"]["emb_name"] != "normal"
+            else None
+        )
+
+        self.model = create_model(config)
+        if config["task_config"]["train_mode"] != "pre-train":
+            self._load_model()
+            for name, param in self.model.named_parameters():
+                if not name.startswith("task_head"):
+                    param.requires_grad = False
+            if self.accelerator.is_local_main_process:
+                print("Load model successfully")
+
         self.trainer = create_trainer(config, self.accelerator, self.model, self.dataset, self.geo_data)
 
         if self.accelerator.is_local_main_process:
             wandb_config = {
                 "data_name": config["data_config"]["data_name"],
                 "data_form": config["data_config"]["data_form"],
+                "emb_name": config["embedding_config"]["emb_name"],
                 "task_name": config["task_config"]["task_name"],
-                "emb_dim": config["embedding_config"]["emb_dim"],
+                "train_mode": config["task_config"]["train_mode"],
             }
             wandb.init(project=config["encoder_config"]["encoder_name"], config=wandb_config)
 
+    def _save_model(self):
+        path = self.config["trainer_config"]["model_path"]
+        state_dict = {k: v for k, v in self.model.state_dict().items() if not k.startswith("task_head")}
+        torch.save(state_dict, path)
+
+    def _load_model(self):
+        path = self.config["trainer_config"]["model_path"]
+        state_dict = torch.load(path, weights_only=True)
+        self.model.load_state_dict(state_dict, strict=False)
+
+    def _log_results(self, results):
+        print(", ".join(f"{k}: {v:.4f}" for k, v in results.items()))
+        wandb.log(results)
+
     def run(self):
-        for epoch in range(self.config["trainer_config"]["num_epochs"]):
+        epoches = (
+            self.config["trainer_config"]["num_epochs"]
+            if self.config["task_config"]["train_mode"] != "test-only"
+            else 0
+        )
+        for epoch in range(epoches):
             train_loss = self.trainer.train(epoch)
             val_loss = self.trainer.validate()
-            test_loss, test_acc = self.trainer.test()
+            test_results = self.trainer.test()
 
             self.accelerator.wait_for_everyone()
 
             if self.accelerator.is_local_main_process:
-                wandb.log(
-                    {"train_loss": train_loss, "val_loss": val_loss, "test_loss": test_loss, "test_acc": test_acc},
-                    step=epoch,
-                )
-                print(
-                    f"Epoch: {epoch + 1}, Train Loss: {train_loss}, Val Loss: {val_loss}, Test Loss: {test_loss}, Test Acc: {test_acc}"
+                self._log_results(
+                    {
+                        "Train Loss": train_loss,
+                        "Val Loss": val_loss,
+                        **{f"Test {k}": v for k, v in test_results.items()},
+                    },
                 )
 
             early_stopping_info = self.trainer.early_stopping(val_loss)
             if early_stopping_info["is_stop"]:
                 if self.accelerator.is_local_main_process:
-                    print("Early stopping")
-                    # TODO 保存模型
+                    print(f"Early stopping in epoch {epoch + 1}")
                 break
 
             self.trainer.scheduler.step()
 
-        test_loss, test_acc = self.trainer.test()
+        test_results = self.trainer.test()
 
         self.accelerator.wait_for_everyone()
 
         if self.accelerator.is_local_main_process:
-            wandb.log({"final_test_loss": test_loss, "final_test_acc": test_acc})
-            print(f"Final Test Loss: {test_loss}, Final Test Accuracy: {test_acc}")
+            self._log_results({f"Final {k}": v for k, v in test_results.items()})
+            if self.config["task_config"]["train_mode"] == "pre-train":
+                self._save_model()
+                print("Save model successfully")
 
         wandb.finish()

@@ -50,56 +50,10 @@ class BaseTrainer:
         )
 
     def train(self, epoch):
-        self.model.train()
-        train_loss = 0
-        for x_loc, x_ts, y_loc, y_ts in tqdm(
-            self.train_loader, disable=not self.accelerator.is_local_main_process, desc=f"Epoch: {epoch+1}"
-        ):
-            x_loc = x_loc.to(self.accelerator.device)
-            y_loc = y_loc.to(self.accelerator.device)
-            output = self.model(x_loc, self.geo_data)
-
-            loss = self.criterion(output.squeeze(1), y_loc.squeeze(1).long())
-            self.optimizer.zero_grad()
-            self.accelerator.backward(loss)
-            self.optimizer.step()
-
-            train_loss += loss.item()
-        train_loss /= len(self.train_loader)
-        return train_loss
+        raise NotImplementedError()
 
     def validate(self):
-        self.model.eval()
-        val_loss = 0
-        with torch.no_grad():
-            for x_loc, x_ts, y_loc, y_ts in self.val_loader:
-                x_loc = x_loc.to(self.accelerator.device)
-                y_loc = y_loc.to(self.accelerator.device)
-                output = self.model(x_loc, self.geo_data)
-
-                preds, trues = self.accelerator.gather_for_metrics([output, y_loc])
-                loss = self.criterion(preds.squeeze(1), trues.squeeze(1).long())
-
-                val_loss += loss.item()
-            val_loss /= len(self.val_loader)
-        return val_loss
+        raise NotImplementedError()
 
     def test(self):
-        self.model.eval()
-        all_preds, all_trues = [], []
-        with torch.no_grad():
-            for x_loc, x_ts, y_loc, y_ts in self.test_loader:
-                x_loc = x_loc.to(self.accelerator.device)
-                y_loc = y_loc.to(self.accelerator.device)
-                output = self.model(x_loc, self.geo_data)
-
-                preds, trues = self.accelerator.gather_for_metrics([output, y_loc])
-                all_preds.append(preds)
-                all_trues.append(trues)
-        all_preds = torch.concat(all_preds, dim=0)
-        all_trues = torch.concat(all_trues, dim=0)
-
-        test_loss = F.cross_entropy(all_preds.squeeze(1), all_trues.squeeze(1).long()).item()
-        top_k_preds = torch.topk(all_preds, 3, dim=-1).indices
-        test_acc = (top_k_preds == all_trues.unsqueeze(-1)).any(dim=-1).float().mean().item()
-        return test_loss, test_acc
+        raise NotImplementedError()

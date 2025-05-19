@@ -13,21 +13,21 @@ class TrajTransformer(nn.Module):
     def __init__(self, encoder_config, embedding, task_head):
         super(TrajTransformer, self).__init__()
         self.embedding = embedding
-        self.positional_encoding = PositionalEncoding(encoder_config["d_model"], 10)
+        self.positional_encoding = PositionalEncoding(encoder_config["d_model"])
         self.encoder = Transformer(encoder_config)
         self.task_head = task_head
 
-    def forward(self, x, geo_data: GeoData = None):
+    def forward(self, x, mask=None, geo_data: GeoData = None):
         if geo_data is not None:
             embedding = self.embedding(geo_data.x, geo_data.edge_index)
             x = embedding[x]
         else:
             x = self.embedding(x)
         x = self.positional_encoding(x)
-        x = self.encoder(x)
+        x = self.encoder(x, mask)
         x = x.mean(dim=1)
         x = self.task_head(x)
-        return x.unsqueeze(1)
+        return x
 
 
 def create_embedding(config):
@@ -52,13 +52,18 @@ def create_embedding(config):
 
 
 def create_task_head(config):
+    task_config = config["task_config"]
     data_config = config["data_config"]
     embedding_config = config["embedding_config"]
 
-    if data_config["data_form"] == "gps":
-        return nn.Linear(embedding_config["emb_dim"], 2)
-    elif data_config["data_form"] == "grid":
-        return nn.Linear(embedding_config["emb_dim"], data_config["vocab_size"])
+    if task_config["task_name"] == "prediction":
+        if data_config["data_form"] == "gps":
+            return nn.Linear(embedding_config["emb_dim"], 2)
+        elif data_config["data_form"] == "grid":
+            return nn.Linear(embedding_config["emb_dim"], data_config["vocab_size"])
+
+    elif task_config["task_name"] == "similarity":
+        return nn.Identity()
 
 
 def create_model(config):

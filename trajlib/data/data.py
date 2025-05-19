@@ -1,25 +1,80 @@
+import random
 from trajdl import trajdl_cpp
 from trajdl.grid import SimpleGridSystem
 import torch
 from torch_geometric.data import Data as GeoData
 
-from trajlib.data.trajectory import Trajectory, GPSTrajectory, GridTrajectory
+
+class Trajectory:
+    def __init__(self, traj_id, locations, timestamps, attributes=None):
+        self.traj_id: int = traj_id
+        self.locations: list[int | list[float]] = locations
+        self.timestamps: list[int] = timestamps
+        self.attributes: dict = attributes
+
+    def __len__(self):
+        return len(self.locations)
 
 
 class TrajData:
     def __init__(self, trajectories):
-        self.trajectories: list[Trajectory] = trajectories
+        self.original: list[Trajectory] = []
+        self.cropped: list[Trajectory] = []
+        self.shifted: list[Trajectory] = []
+        self.distorted: list[Trajectory] = []
+        for i, traj in enumerate(trajectories):
+            self.original.append(self.__tokenize__(i, *traj))
+            self.cropped.append(self.__tokenize__(i, *self.__crop__(*traj)))
+            # self.shifted.append(self.__tokenize__(self.__shift__(i, coordinates, timestamps)))
+            # self.distorted.append(self.__tokenize__(self.__distort__(i, coordinates, timestamps)))
+
+    def __len__(self):
+        return len(self.original)
+
+    def __tokenize__(self, traj_id, coordinates, timestamps):
+        raise NotImplementedError()
+
+    def __crop__(self, coordinates, timestamps, ratio=0.8):
+        n = len(coordinates)
+        if n <= 2:
+            return coordinates, timestamps
+        mid_indices = list(range(1, n - 1))
+        keep_count = int(ratio * len(mid_indices))
+        keep_mid = sorted(random.sample(mid_indices, keep_count))
+        keep_indices = [0] + keep_mid + [n - 1]
+        coordinates = [coordinates[i] for i in keep_indices]
+        timestamps = [timestamps[i] for i in keep_indices]
+        return coordinates, timestamps
+
+    def __shift__(self, coordinates, timestamps):
+        pass
+
+    def __distort__(self, coordinates, timestamps):
+        pass
 
 
 class GPSTrajData(TrajData):
     def __init__(self, trajectories):
-        super().__init__([GPSTrajectory(i, *traj) for i, traj in enumerate(trajectories)])
+        super().__init__(trajectories)
+
+    def __tokenize__(self, traj_id, coordinates, timestamps):
+        return Trajectory(traj_id, coordinates, timestamps)
 
 
 class GridTrajData(TrajData):
     def __init__(self, trajectories, grid: SimpleGridSystem):
-        super().__init__([GridTrajectory(i, *traj, grid) for i, traj in enumerate(trajectories)])
         self.grid = grid
+        super().__init__(trajectories)
+
+    def __tokenize__(self, traj_id, coordinates, timestamps):
+        self.grid_locations = []
+        self.grid_coordinates = []
+        for lon, lat in coordinates:
+            point = trajdl_cpp.convert_gps_to_webmercator(lon, lat)
+            loc = self.grid.locate_unsafe(point.x, point.y)
+            self.grid_locations.append(int(loc))
+            self.grid_coordinates.append(self.grid.to_grid_coordinate(loc))
+        return Trajectory(traj_id, self.grid_locations, timestamps)
 
 
 class GraphData:
@@ -29,10 +84,7 @@ class GraphData:
         self.features: list[list[float]] = features
 
     def to_geo_data(self, index_as_features=True) -> GeoData:
-        if index_as_features:
-            x = torch.tensor(self.nodes)
-        else:
-            x = torch.tensor(self.features).float()
+        x = torch.tensor(self.nodes) if index_as_features else torch.tensor(self.features).float()
         edge_index = []
         for node in self.nodes:
             for neighbor in self.neighbors[node]:
