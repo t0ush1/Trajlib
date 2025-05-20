@@ -35,58 +35,50 @@ class PredictionDataset(Dataset):
         return self.x_loc[index], self.x_ts[index], self.y_loc[index], self.y_ts[index]
 
 
-class SimilarityCDDDataset(Dataset):
-    def __init__(self, traj_data: TrajData, limit=10000):
+class SimilarityDataset(Dataset):
+    def __init__(self, traj_data: TrajData, variant, limit=10000):
         self.original = traj_data.original
-        self.variant = traj_data.cropped
+        if variant == "cropp":
+            self.variant = traj_data.cropped
+        elif variant == "distort":
+            self.variant = traj_data.distorted
         self.limit = limit
-        self.__read_data__()
+        self.data_list = self.__read_data__()
 
     def __read_data__(self):
-        self.x_ori_loc, self.y_ori_loc = [], []
-        self.x_var_loc, self.y_var_loc = [], []
+        raise NotImplementedError()
+
+    def __len__(self):
+        return len(self.data_list[0])
+
+    def __getitem__(self, index):
+        return [torch.tensor(x[index]) for x in self.data_list]
+
+
+class SimilarityCDDDataset(SimilarityDataset):
+    def __read_data__(self):
+        x_ori_loc, y_ori_loc = [], []
+        x_var_loc, y_var_loc = [], []
         for i in range(len(self.original)):
             for j in range(i, len(self.original)):
-                if len(self.x_ori_loc) >= self.limit:
-                    return
-                self.x_ori_loc.append(self.original[i].locations)
-                self.y_ori_loc.append(self.original[j].locations)
-                self.x_var_loc.append(self.variant[i].locations)
-                self.y_var_loc.append(self.variant[j].locations)
-
-    def __len__(self):
-        return len(self.x_ori_loc)
-
-    def __getitem__(self, index):
-        return (
-            torch.tensor(self.x_ori_loc[index]),
-            torch.tensor(self.y_ori_loc[index]),
-            torch.tensor(self.x_var_loc[index]),
-            torch.tensor(self.y_var_loc[index]),
-        )
+                if len(x_ori_loc) >= self.limit:
+                    break
+                x_ori_loc.append(self.original[i].locations)
+                y_ori_loc.append(self.original[j].locations)
+                x_var_loc.append(self.variant[i].locations)
+                y_var_loc.append(self.variant[j].locations)
+            if len(x_ori_loc) >= self.limit:
+                break
+        return x_ori_loc, y_ori_loc, x_var_loc, y_var_loc
 
 
-class SimilarityKNNDataset(Dataset):
-    def __init__(self, traj_data: TrajData, limit=10000):
-        self.original = traj_data.original
-        self.variant = traj_data.cropped
-        self.limit = limit
-        self.__read_data__()
-
+class SimilarityKNNDataset(SimilarityDataset):
     def __read_data__(self):
-        self.x_ori_loc = []
-        self.x_var_loc = []
+        x_ori_loc = []
+        x_var_loc = []
         for i in range(len(self.original)):
-            if len(self.x_ori_loc) >= self.limit:
+            if len(x_ori_loc) >= self.limit:
                 return
-            self.x_ori_loc.append(self.original[i].locations)
-            self.x_var_loc.append(self.variant[i].locations)
-
-    def __len__(self):
-        return len(self.x_ori_loc)
-
-    def __getitem__(self, index):
-        return (
-            torch.tensor(self.x_ori_loc[index]),
-            torch.tensor(self.x_var_loc[index]),
-        )
+            x_ori_loc.append(self.original[i].locations)
+            x_var_loc.append(self.variant[i].locations)
+        return x_ori_loc, x_var_loc

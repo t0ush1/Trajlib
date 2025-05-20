@@ -36,34 +36,36 @@ def create_embedding(config):
     vocab_size = data_config["vocab_size"]
     emb_dim = embedding_config["emb_dim"]
 
-    if data_config["data_form"] == "gps":
-        return nn.Linear(2, emb_dim)
-
-    elif data_config["data_form"] == "grid":
-        if embedding_config["pre-trained"]:
-            with open(embedding_config["embs_path"], "rb") as f:
+    match (data_config, embedding_config):
+        case {"data_form": "gps"}, _:
+            return nn.Linear(2, emb_dim)
+        case {"data_form": "grid"}, {"pre-trained": True, "embs_path": embs_path}:
+            with open(embs_path, "rb") as f:
                 embeddings = pickle.load(f)
             return nn.Embedding.from_pretrained(embeddings=embeddings, freeze=True)
-
-        if embedding_config["emb_name"] == "normal":
+        case {"data_form": "grid"}, {"emb_name": "normal"}:
             return nn.Embedding(vocab_size, emb_dim)
-        elif embedding_config["emb_name"] in ["gat", "gcn"]:
+        case {"data_form": "grid"}, {"emb_name": "gat" | "gcn"}:
             return GNNWithEmbedding(vocab_size, emb_dim)
+        case _:
+            raise ValueError()
 
 
 def create_task_head(config):
     task_config = config["task_config"]
     data_config = config["data_config"]
     embedding_config = config["embedding_config"]
+    emb_dim = embedding_config["emb_dim"]
 
-    if task_config["task_name"] == "prediction":
-        if data_config["data_form"] == "gps":
-            return nn.Linear(embedding_config["emb_dim"], 2)
-        elif data_config["data_form"] == "grid":
-            return nn.Linear(embedding_config["emb_dim"], data_config["vocab_size"])
-
-    elif task_config["task_name"] == "similarity":
-        return nn.Identity()
+    match (task_config, data_config):
+        case ({"task_name": "prediction"}, {"data_form": "gps"}):
+            return nn.Linear(emb_dim, 2)
+        case ({"task_name": "prediction"}, {"data_form": "grid", "vocab_size": vocab_size}):
+            return nn.Linear(emb_dim, vocab_size)
+        case ({"task_name": "similarity"}, _):
+            return nn.Identity()
+        case _:
+            raise ValueError()
 
 
 def create_model(config):

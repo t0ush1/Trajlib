@@ -21,16 +21,22 @@ def build_grid(coord_trajs, step=100):
 def create_data(config):
     data_config = config["data_config"]
 
-    if data_config["data_name"] == "chengdu":
-        raw_data = read_data_chengdu(data_config["data_path"], data_config["data_size"])
+    match data_config:
+        case {"data_name": "chengdu", "data_path": path, "data_size": size}:
+            raw_data = read_data_chengdu(path, size)
+        case _:
+            return ValueError()
 
-    if data_config["data_form"] == "gps":
-        traj_data = GPSTrajData(raw_data)
-        graph_data = None
-    elif data_config["data_form"] == "grid":
-        grid = build_grid([traj[0] for traj in raw_data], step=data_config["grid_step"])
-        traj_data = GridTrajData(raw_data, grid)
-        graph_data = GridGraphData(grid)
-        data_config["vocab_size"] = len(grid)
+    match data_config:
+        case {"data_form": "gps"}:
+            traj_data = GPSTrajData(raw_data)
+            graph_data = None
+        case {"data_form": "grid", "grid_step": step}:
+            grid = build_grid([traj[0] for traj in raw_data], step=step)
+            traj_data = GridTrajData(raw_data, grid)
+            graph_data = GridGraphData(grid)
+            data_config["vocab_size"] = len(grid)
+        case _:
+            raise ValueError()
 
     return traj_data, graph_data

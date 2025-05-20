@@ -20,13 +20,11 @@ class TrajData:
     def __init__(self, trajectories):
         self.original: list[Trajectory] = []
         self.cropped: list[Trajectory] = []
-        self.shifted: list[Trajectory] = []
         self.distorted: list[Trajectory] = []
         for i, traj in enumerate(trajectories):
             self.original.append(self.__tokenize__(i, *traj))
             self.cropped.append(self.__tokenize__(i, *self.__crop__(*traj)))
-            # self.shifted.append(self.__tokenize__(self.__shift__(i, coordinates, timestamps)))
-            # self.distorted.append(self.__tokenize__(self.__distort__(i, coordinates, timestamps)))
+            self.distorted.append(self.__tokenize__(i, *self.__distort__(*traj)))
 
     def __len__(self):
         return len(self.original)
@@ -46,11 +44,15 @@ class TrajData:
         timestamps = [timestamps[i] for i in keep_indices]
         return coordinates, timestamps
 
-    def __shift__(self, coordinates, timestamps):
-        pass
-
     def __distort__(self, coordinates, timestamps):
-        pass
+        coords = []
+        for lon, lat in coordinates:
+            point = trajdl_cpp.convert_gps_to_webmercator(lon, lat)
+            x = point.x + 30 * random.gauss(0, 1)
+            y = point.y + 30 * random.gauss(0, 1)
+            point = trajdl_cpp.convert_webmercator_to_gps(x, y)
+            coords.append([point.lng, point.lat])
+        return coords, timestamps
 
 
 class GPSTrajData(TrajData):
@@ -72,8 +74,10 @@ class GridTrajData(TrajData):
         for lon, lat in coordinates:
             point = trajdl_cpp.convert_gps_to_webmercator(lon, lat)
             loc = self.grid.locate_unsafe(point.x, point.y)
-            self.grid_locations.append(int(loc))
-            self.grid_coordinates.append(self.grid.to_grid_coordinate(loc))
+            x, y = self.grid.to_grid_coordinate_unsafe(loc)
+            if self.grid.in_boundary_by_grid_coordinate(x, y):
+                self.grid_locations.append(int(loc))
+                self.grid_coordinates.append([x, y])
         return Trajectory(traj_id, self.grid_locations, timestamps)
 
 

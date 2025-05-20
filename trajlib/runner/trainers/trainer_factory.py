@@ -4,14 +4,14 @@ from trajlib.runner.trainers.similarity_trainer import SimilarityCDDTrainer, Sim
 
 def create_trainer(config, accelerator, model, dataset, geo_data):
     task_config = config["task_config"]
+    args = config["trainer_config"], accelerator, model, dataset, geo_data
 
-    if task_config["task_name"] == "prediction":
-        constructor = PredictionTrainer
-
-    elif task_config["task_name"] == "similarity":
-        if task_config["sub-task"] == "kNN":
-            constructor = SimilarityKNNTrainer
-        elif task_config["sub-task"] == "CDD":
-            constructor = SimilarityCDDTrainer
-
-    return constructor(config["trainer_config"], accelerator, model, dataset, geo_data)
+    match task_config:
+        case {"task_name": "prediction"}:
+            return PredictionTrainer(*args)
+        case {"task_name": "similarity", "sub-task": "kNN"}:
+            return SimilarityKNNTrainer(*args)
+        case {"task_name": "similarity", "sub-task": "CDD"}:
+            return SimilarityCDDTrainer(*args)
+        case _:
+            raise ValueError()
