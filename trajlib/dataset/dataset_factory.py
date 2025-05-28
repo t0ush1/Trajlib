@@ -1,7 +1,7 @@
 from torch.utils.data import random_split
 
 from trajlib.data.data import TrajData
-from trajlib.dataset.datasets import PredictionDataset, SimilarityCDDDataset, SimilarityKNNDataset
+from trajlib.dataset.datasets import PredictionDataset, SimilarityCDDDataset, SimilarityKNNDataset, MLMDataset
 
 
 def create_dataset(config, data: TrajData):
@@ -14,6 +14,8 @@ def create_dataset(config, data: TrajData):
             dataset = SimilarityCDDDataset(data, variant)
         case {"task_name": "similarity", "sub-task": "kNN", "variant": variant}:
             dataset = SimilarityKNNDataset(data, variant)
+        case {"task_name": "mlm"}:
+            dataset = MLMDataset(data)
         case _:
             raise ValueError()
 

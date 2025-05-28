@@ -7,30 +7,6 @@ from trajlib.data.data import GraphData
 from trajlib.model.embedding.embedding_trainer import EmbeddingTrainer
 
 
-class GCNEncoder(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(GCNEncoder, self).__init__()
-        self.conv1 = gnn.GCNConv(in_channels, 2 * out_channels, cached=True)
-        self.conv2 = gnn.GCNConv(2 * out_channels, out_channels, cached=True)
-
-    def forward(self, x, edge_index):
-        x = self.conv1(x, edge_index).relu()
-        x = self.conv2(x, edge_index)
-        return x
-
-
-class GATEncoder(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(GATEncoder, self).__init__()
-        self.conv1 = gnn.GATConv(in_channels, out_channels // 8, heads=4)
-        self.conv2 = gnn.GATConv(out_channels // 2, out_channels, heads=1)
-
-    def forward(self, x, edge_index):
-        x = self.conv1(x, edge_index).relu()
-        x = self.conv2(x, edge_index)
-        return x
-
-
 class GNNWithEmbedding(nn.Module):
     def __init__(self, embedding_name, num_nodes, embedding_dim):
         super(GNNWithEmbedding, self).__init__()

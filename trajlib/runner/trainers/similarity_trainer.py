@@ -3,50 +3,35 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from trajlib.data.data import SPECIAL_TOKENS
 from trajlib.runner.trainers.base_trainer import BaseTrainer
 
-# TODO MLM 预训练，自回归预训练
 
-
+# mask 左上角 n * n 全为 1，其他为 0
 def collate_fn(batch):
-    lens, pads = [], []
+    locs, masks = [], []
     for trajs in zip(*batch):
-        lengths = torch.tensor([len(t) for t in trajs])
-        padded = pad_sequence(trajs, batch_first=True)
-        lens.append(lengths)
-        pads.append(padded)
-    return pads, lens
-
-
-def make_padding_mask(lengths, max_len=None):
-    # 左上方 n*n 为 1，其他为 0
-    if max_len is None:
-        max_len = lengths.max().item()
-    seq_range = torch.arange(max_len, device=lengths.device)
-    valid_mask = seq_range.unsqueeze(0) < lengths.unsqueeze(1)
-    mask = valid_mask.unsqueeze(2) & valid_mask.unsqueeze(1)
-    return mask.int()
+        loc = pad_sequence(trajs, batch_first=True, padding_value=SPECIAL_TOKENS["pad"])
+        mask = loc != SPECIAL_TOKENS["pad"]  # (B, L)
+        mask = mask.unsqueeze(1) & mask.unsqueeze(2)  # (B, L, L)
+        locs.append(loc)
+        masks.append(mask.int())
+    return locs, masks
 
 
 class SimilarityTrainer(BaseTrainer):
     def __init__(self, trainer_config, accelerator, model, dataset, geo_data):
-        super().__init__(trainer_config, accelerator, model, dataset, geo_data)
-        dataset = self.test_loader.dataset
-        batch_size = trainer_config["batch_size"]
-        self.test_loader = self.accelerator.prepare(
-            DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
-        )  # [x_ori, y_ori, x_var, y_var] or [x_ori, x_var]
+        super().__init__(trainer_config, accelerator, model, dataset, geo_data, collate_fn)
 
     def test(self):
         self.model.eval()
         all_outputs = []
         with torch.no_grad():
-            for locs, lens in tqdm(
+            for locs, masks in tqdm(
                 self.test_loader, disable=not self.accelerator.is_local_main_process, desc=f"Testing"
             ):
                 locs = [x.to(self.accelerator.device) for x in locs]
-                lens = [x.to(self.accelerator.device) for x in lens]
-                masks = [make_padding_mask(x) for x in lens]
+                masks = [m.to(self.accelerator.device) for m in masks]
                 outputs = [self.model(loc, mask=mask) for loc, mask in zip(locs, masks)]
 
                 gathered_outputs = self.accelerator.gather_for_metrics(outputs)

@@ -5,6 +5,12 @@ import torch
 from torch_geometric.data import Data as GeoData
 
 
+SPECIAL_TOKENS = {
+    "pad": -1,
+    "mask": -2,
+}
+
+
 class Trajectory:
     def __init__(self, traj_id, locations, timestamps, attributes=None):
         self.traj_id: int = traj_id
@@ -22,14 +28,14 @@ class TrajData:
         self.cropped: list[Trajectory] = []
         self.distorted: list[Trajectory] = []
         for i, traj in enumerate(trajectories):
-            self.original.append(self.__tokenize__(i, *traj))
-            self.cropped.append(self.__tokenize__(i, *self.__crop__(*traj)))
-            self.distorted.append(self.__tokenize__(i, *self.__distort__(*traj)))
+            self.original.append(self.__transform__(i, *traj))
+            self.cropped.append(self.__transform__(i, *self.__crop__(*traj)))
+            self.distorted.append(self.__transform__(i, *self.__distort__(*traj)))
 
     def __len__(self):
         return len(self.original)
 
-    def __tokenize__(self, traj_id, coordinates, timestamps):
+    def __transform__(self, traj_id, coordinates, timestamps):
         raise NotImplementedError()
 
     def __crop__(self, coordinates, timestamps, ratio=0.8):
@@ -59,7 +65,7 @@ class GPSTrajData(TrajData):
     def __init__(self, trajectories):
         super().__init__(trajectories)
 
-    def __tokenize__(self, traj_id, coordinates, timestamps):
+    def __transform__(self, traj_id, coordinates, timestamps):
         return Trajectory(traj_id, coordinates, timestamps)
 
 
@@ -68,7 +74,7 @@ class GridTrajData(TrajData):
         self.grid = grid
         super().__init__(trajectories)
 
-    def __tokenize__(self, traj_id, coordinates, timestamps):
+    def __transform__(self, traj_id, coordinates, timestamps):
         self.grid_locations = []
         self.grid_coordinates = []
         for lon, lat in coordinates:

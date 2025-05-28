@@ -1,8 +1,9 @@
+import random
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from trajlib.data.data import TrajData
+from trajlib.data.data import TrajData, SPECIAL_TOKENS
 
 
 class PredictionDataset(Dataset):
@@ -35,6 +36,7 @@ class PredictionDataset(Dataset):
         return self.x_loc[index], self.x_ts[index], self.y_loc[index], self.y_ts[index]
 
 
+# TODO 加上时间戳
 class SimilarityDataset(Dataset):
     def __init__(self, traj_data: TrajData, variant, limit=10000):
         self.original = traj_data.original
@@ -82,3 +84,30 @@ class SimilarityKNNDataset(SimilarityDataset):
             x_ori_loc.append(self.original[i].locations)
             x_var_loc.append(self.variant[i].locations)
         return x_ori_loc, x_var_loc
+
+
+# TODO 时间戳怎么掩码？
+class MLMDataset(Dataset):
+    def __init__(self, traj_data: TrajData, ratio=0.1, num_var=5):
+        self.trajectories = traj_data.original
+        self.ratio = ratio
+        self.num_var = num_var
+        self.__read_data__()
+
+    def __read_data__(self):
+        self.x_loc = []
+        self.y_loc = []
+        for traj in self.trajectories:
+            for i in range(self.num_var):
+                locs = traj.locations.copy()
+                for j in range(len(locs)):
+                    if random.random() < self.ratio:
+                        locs[j] = SPECIAL_TOKENS["mask"]
+                self.x_loc.append(locs)
+                self.y_loc.append(traj.locations)
+
+    def __len__(self):
+        return len(self.x_loc)
+
+    def __getitem__(self, index):
+        return torch.tensor(self.x_loc[index]), torch.tensor(self.y_loc[index])
