@@ -1,6 +1,6 @@
 from trajlib.runner.trainers.prediction_trainer import PredictionTrainer
 from trajlib.runner.trainers.similarity_trainer import SimilarityCDDTrainer, SimilarityKNNTrainer
-from trajlib.runner.trainers.mlm_trainer import MLMTrainer
+from trajlib.runner.trainers.filling_trainer import FillingTrainer
 
 
 def create_trainer(config, accelerator, model, dataset, geo_data):
@@ -14,7 +14,7 @@ def create_trainer(config, accelerator, model, dataset, geo_data):
             return SimilarityKNNTrainer(*args)
         case {"task_name": "similarity", "sub-task": "CDD"}:
             return SimilarityCDDTrainer(*args)
-        case {"task_name": "mlm"}:
-            return MLMTrainer(*args)
+        case {"task_name": "filling", "sub-task": sub_task}:
+            return FillingTrainer(*args, sub_task=sub_task)
         case _:
             raise ValueError()

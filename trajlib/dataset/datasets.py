@@ -40,9 +40,9 @@ class PredictionDataset(Dataset):
 class SimilarityDataset(Dataset):
     def __init__(self, traj_data: TrajData, variant, limit=10000):
         self.original = traj_data.original
-        if variant == "cropp":
+        if variant == "cropped":
             self.variant = traj_data.cropped
-        elif variant == "distort":
+        elif variant == "distorted":
             self.variant = traj_data.distorted
         self.limit = limit
         self.data_list = self.__read_data__()
@@ -86,28 +86,49 @@ class SimilarityKNNDataset(SimilarityDataset):
         return x_ori_loc, x_var_loc
 
 
-# TODO 时间戳怎么掩码？
-class MLMDataset(Dataset):
-    def __init__(self, traj_data: TrajData, ratio=0.1, num_var=5):
+class FillingDataset(Dataset):
+    def __init__(self, traj_data: TrajData, length=128):
         self.trajectories = traj_data.original
-        self.ratio = ratio
-        self.num_var = num_var
-        self.__read_data__()
+        self.length = length
+        self.inputs, self.labels = self.__read_data__()
 
     def __read_data__(self):
-        self.x_loc = []
-        self.y_loc = []
-        for traj in self.trajectories:
-            for i in range(self.num_var):
-                locs = traj.locations.copy()
-                for j in range(len(locs)):
-                    if random.random() < self.ratio:
-                        locs[j] = SPECIAL_TOKENS["mask"]
-                self.x_loc.append(locs)
-                self.y_loc.append(traj.locations)
+        raise NotImplementedError()
 
     def __len__(self):
-        return len(self.x_loc)
+        return len(self.inputs)
 
     def __getitem__(self, index):
-        return torch.tensor(self.x_loc[index]), torch.tensor(self.y_loc[index])
+        return torch.tensor(self.inputs[index]), torch.tensor(self.labels[index])
+
+
+class MLMDataset(FillingDataset):
+    def __init__(self, traj_data: TrajData, ratio=0.15, num_var=5):
+        self.ratio = ratio
+        self.num_var = num_var
+        super().__init__(traj_data)
+
+    def __read_data__(self):
+        inputs, labels = [], []
+        for traj in self.trajectories:
+            for pos in range(max(1, len(traj) - self.length)):
+                locs = traj.locations[pos : pos + self.length]
+                for i in range(self.num_var):
+                    input = locs.copy()
+                    for j in range(len(input)):
+                        if random.random() < self.ratio:
+                            input[j] = SPECIAL_TOKENS["mask"]
+                    inputs.append(input)
+                    labels.append(locs)
+        return inputs, labels
+
+
+class AutoregressiveDataset(FillingDataset):
+    def __read_data__(self):
+        inputs, labels = [], []
+        for traj in self.trajectories:
+            for pos in range(max(1, len(traj) - self.length)):
+                locs = traj.locations[pos : pos + self.length]
+                inputs.append(locs[:-1])
+                labels.append(locs[1:])
+        return inputs, labels

@@ -8,6 +8,7 @@ from torch_geometric.data import Data as GeoData
 SPECIAL_TOKENS = {
     "pad": -1,
     "mask": -2,
+    "ignore": -100
 }
 
 

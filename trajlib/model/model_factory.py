@@ -94,7 +94,7 @@ def create_task_head(config):
             return True, nn.Linear(emb_dim, vocab_size)
         case ({"task_name": "similarity"}, _):
             return True, nn.Identity()
-        case ({"task_name": "mlm"}, {"data_form": "grid", "vocab_size": vocab_size}):
+        case ({"task_name": "filling"}, {"data_form": "grid", "vocab_size": vocab_size}):
             return False, nn.Linear(emb_dim, vocab_size)
         case _:
             raise ValueError()
