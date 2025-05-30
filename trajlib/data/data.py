@@ -4,11 +4,13 @@ from trajdl.grid import SimpleGridSystem
 import torch
 from torch_geometric.data import Data as GeoData
 
+from trajlib.data.roadnet_system import RoadnetSystem
+
 
 SPECIAL_TOKENS = {
     "pad": -1,
     "mask": -2,
-    "ignore": -100
+    "ignore": -100,
 }
 
 
@@ -88,6 +90,16 @@ class GridTrajData(TrajData):
         return Trajectory(traj_id, self.grid_locations, timestamps)
 
 
+class RoadnetTrajData(TrajData):
+    def __init__(self, trajectories, road_net: RoadnetSystem):
+        self.road_net = road_net
+        super().__init__(trajectories)
+
+    def __transform__(self, traj_id, coordinates, timestamps):
+        osmids, _, timestamps = self.road_net.get_road_osmids_for_points(coordinates=coordinates, timestamps=timestamps)
+        return Trajectory(traj_id, osmids, timestamps)
+
+
 class GraphData:
     def __init__(self, nodes, neighbors, features):
         self.nodes: list[int] = nodes
@@ -127,3 +139,53 @@ class GridGraphData(GraphData):
     def __get_features__(self, node):
         x, y = self.grid.to_grid_coordinate(str(node))
         return self.grid.get_centroid_of_grid(x, y)
+
+
+class RoadnetGraphData(GraphData):
+    def __init__(self, road_net: RoadnetSystem):
+        self.road_net = road_net
+
+    def get_nodes(self):
+        """
+        获取所有路段节点（返回osmid列表）
+        :return: 所有路段osmid的列表
+        """
+        return list(range(self.road_net.edge_num))
+
+    def get_neighbors(self, node):
+        """
+        获取指定路段的完整相邻路段（考虑双向连接）
+        :param node: 路段osmid
+        :return: 相邻路段osmid列表
+        """
+        neighbors = []
+        connected_vecs = []
+        # 筛选目标路段（处理可能的数据类型或列表形式的osmid）
+        # 假设node是你要查找的值
+        matched_rows = self.road_net.edges[self.road_net.edges["osmid"] == node]
+
+        if not matched_rows.empty:
+            for i in range(len(matched_rows)):
+                u_node, v_node, _ = matched_rows.index[i]
+                if u_node not in connected_vecs:
+                    connected_vecs.append(u_node)
+                if v_node not in connected_vecs:
+                    connected_vecs.append(v_node)
+        else:
+            return []
+
+        for vec in connected_vecs:
+            # u和v应该是等价的
+            neighbor = self.road_net.edges[self.road_net.edges.index.get_level_values("u") == vec]
+            neighbor = neighbor["osmid"].values.tolist()
+            for i in range(len(neighbor)):
+                if neighbor[i] not in neighbors:
+                    neighbors.append(neighbor[i])
+
+        # 去重并移除自身
+        if node in neighbors:
+            neighbors.remove(node)
+        return neighbors
+
+    def get_features(self, node):
+        pass  # TODO

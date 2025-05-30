@@ -52,7 +52,7 @@ class TrajTransformer(nn.Module):
         x = self.embedding(x, geo_data)
         x = self.positional_encoding(x)
         x = self.encoder(x, mask)
-        if self.pooling:
+        if self.pooling: # TODO 加CLS，取最后一个
             x = x.mean(dim=1)
         x = self.task_head(x)
         return x
@@ -67,13 +67,13 @@ def create_embedding(config):
     match (data_config, embedding_config):
         case {"data_form": "gps"}, _:
             embedding = nn.Linear(2, emb_dim)
-        case {"data_form": "grid"}, {"pre-trained": True, "embs_path": embs_path}:
+        case {"data_form": "grid" | "roadnet"}, {"pre-trained": True, "embs_path": embs_path}:
             with open(embs_path, "rb") as f:
                 embeddings = pickle.load(f)
             embedding = nn.Embedding.from_pretrained(embeddings=embeddings, freeze=True)
-        case {"data_form": "grid"}, {"emb_name": "normal"}:
+        case {"data_form": "grid" | "roadnet"}, {"emb_name": "normal"}:
             embedding = nn.Embedding(vocab_size, emb_dim)
-        case {"data_form": "grid"}, {"emb_name": "gat" | "gcn"}:
+        case {"data_form": "grid" | "roadnet"}, {"emb_name": "gat" | "gcn"}:
             embedding = GNNWithEmbedding(vocab_size, emb_dim)
         case _:
             raise ValueError()
