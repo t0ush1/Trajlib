@@ -1,0 +1,33 @@
+# 忽略操作系统生成的文件
+.DS_Store            # macOS 操作系统生成的文件
+Thumbs.db            # Windows 操作系统生成的文件
+
+# 忽略 Python 环境相关文件
+*.pyc                # 忽略编译过的 Python 文件
+**/__pycache__/      # 忽略 Python 缓存目录
+trajlib/__pycache__/
+trajlib/data/__pycache__/
+trajlib/data/data_reader/__pycache__/
+trajlib/dataset/__pycache__/
+trajlib/model/__pycache__/
+trajlib/model/embedding/__pycache__/
+trajlib/runner/__pycache__/
+trajlib/runner/trainers/__pycache__/
+trajlib/runner/utils/__pycache__/
+
+resource/
+
+# 忽略虚拟环境文件夹
+venv/                 # Python 虚拟环境目录
+env/                  # 另一个常见的虚拟环境目录
+
+# 忽略 IDE 配置文件
+.vscode/              # Visual Studio Code 配置文件
+.idea/                # JetBrains IDE（如 PyCharm）配置文件
+
+# 忽略日志文件
+*.log
+
+# 忽略依赖库或包
+node_modules/         # Node.js 项目依赖目录
+bower_components/     # Bower 项目依赖目录
