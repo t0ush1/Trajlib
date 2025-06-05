@@ -36,7 +36,6 @@ class PredictionDataset(Dataset):
         return self.x_loc[index], self.x_ts[index], self.y_loc[index], self.y_ts[index]
 
 
-# TODO 加上时间戳
 class SimilarityDataset(Dataset):
     def __init__(self, traj_data: TrajData, variant, limit=10000):
         self.original = traj_data.original
@@ -44,6 +43,8 @@ class SimilarityDataset(Dataset):
             self.variant = traj_data.cropped
         elif variant == "distorted":
             self.variant = traj_data.distorted
+        elif variant == "original":
+            self.variant = traj_data.original
         self.limit = limit
         self.data_list = self.__read_data__()
 
@@ -57,11 +58,24 @@ class SimilarityDataset(Dataset):
         return [torch.tensor(x[index]) for x in self.data_list]
 
 
+class SimilarityMSSDataset(SimilarityDataset):
+    def __read_data__(self):
+        x_even_loc, x_odd_loc = [], []
+        for i in range(len(self.variant)):
+            if len(x_even_loc) >= self.limit:
+                break
+            x_even_loc.append(self.variant[i].locations[0::2])
+            x_odd_loc.append(self.variant[i].locations[1::2])
+        return x_even_loc, x_odd_loc
+
+
 class SimilarityCDDDataset(SimilarityDataset):
     def __read_data__(self):
         x_ori_loc, y_ori_loc = [], []
         x_var_loc, y_var_loc = [], []
         for i in range(len(self.original)):
+            if len(x_ori_loc) >= self.limit:
+                break
             for j in range(i, len(self.original)):
                 if len(x_ori_loc) >= self.limit:
                     break
@@ -69,8 +83,6 @@ class SimilarityCDDDataset(SimilarityDataset):
                 y_ori_loc.append(self.original[j].locations)
                 x_var_loc.append(self.variant[i].locations)
                 y_var_loc.append(self.variant[j].locations)
-            if len(x_ori_loc) >= self.limit:
-                break
         return x_ori_loc, y_ori_loc, x_var_loc, y_var_loc
 
 
@@ -80,7 +92,7 @@ class SimilarityKNNDataset(SimilarityDataset):
         x_var_loc = []
         for i in range(len(self.original)):
             if len(x_ori_loc) >= self.limit:
-                return
+                break
             x_ori_loc.append(self.original[i].locations)
             x_var_loc.append(self.variant[i].locations)
         return x_ori_loc, x_var_loc

@@ -43,6 +43,24 @@ class SimilarityTrainer(BaseTrainer):
         raise NotImplementedError()
 
 
+# Most Similar Search
+class SimilarityMSSTrainer(SimilarityTrainer):
+    def _calc_metrics(self, outputs):
+        x_odd, x_even = outputs
+        query_ratio = 0.1
+        num_query = int(x_odd.size(0) * query_ratio)
+        query, db = x_odd[:num_query], x_even
+
+        dists = torch.cdist(query, db)
+        sorted_indices = torch.argsort(dists, dim=1)  # (num_query, db_size)
+        ground_truth = torch.arange(query.size(0), device=query.device)  # (num_query,)
+        match = sorted_indices == ground_truth.unsqueeze(1)  # (num_query, db_size)
+        ranks = match.float().argmax(dim=1).float() + 1
+
+        return {"Mean Rank": ranks.mean().item()}
+
+
+# Cross Distance Deviation
 class SimilarityCDDTrainer(SimilarityTrainer):
     def _calc_metrics(self, outputs):
         x_ori, y_ori, x_var, y_var = outputs
@@ -53,6 +71,7 @@ class SimilarityCDDTrainer(SimilarityTrainer):
         return {"Mean CDD": cdd.mean().item()}
 
 
+# k-Nearest Neighbors
 class SimilarityKNNTrainer(SimilarityTrainer):
     def _calc_metrics(self, outputs):
         x_ori, x_var = outputs
@@ -77,4 +96,4 @@ class SimilarityKNNTrainer(SimilarityTrainer):
         recall_hits = match.any(dim=1).float().sum()
         recall = recall_hits / (num_query * k)
 
-        return {f"Precision@{k}": precision, f"Recall@{k}": recall}
+        return {f"Precision@{k}": precision.item(), f"Recall@{k}": recall.item()}

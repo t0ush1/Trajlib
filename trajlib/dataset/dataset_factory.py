@@ -3,6 +3,7 @@ from torch.utils.data import random_split
 from trajlib.data.data import TrajData
 from trajlib.dataset.datasets import (
     PredictionDataset,
+    SimilarityMSSDataset,
     SimilarityCDDDataset,
     SimilarityKNNDataset,
     MLMDataset,
@@ -16,6 +17,8 @@ def create_dataset(config, data: TrajData):
     match task_config:
         case {"task_name": "prediction", "input_len": input_len, "output_len": output_len}:
             dataset = PredictionDataset(data, input_len, output_len)
+        case {"task_name": "similarity", "sub-task": "MSS", "variant": variant}:
+            dataset = SimilarityMSSDataset(data, variant)
         case {"task_name": "similarity", "sub-task": "CDD", "variant": variant}:
             dataset = SimilarityCDDDataset(data, variant)
         case {"task_name": "similarity", "sub-task": "kNN", "variant": variant}:
