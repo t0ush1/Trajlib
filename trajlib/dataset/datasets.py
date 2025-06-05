@@ -1,8 +1,9 @@
+import random
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from trajlib.data.data import TrajData
+from trajlib.data.data import TrajData, SPECIAL_TOKENS
 
 
 class PredictionDataset(Dataset):
@@ -35,58 +36,99 @@ class PredictionDataset(Dataset):
         return self.x_loc[index], self.x_ts[index], self.y_loc[index], self.y_ts[index]
 
 
-class SimilarityCDDDataset(Dataset):
-    def __init__(self, traj_data: TrajData, limit=10000):
+# TODO 加上时间戳
+class SimilarityDataset(Dataset):
+    def __init__(self, traj_data: TrajData, variant, limit=10000):
         self.original = traj_data.original
-        self.variant = traj_data.cropped
+        if variant == "cropped":
+            self.variant = traj_data.cropped
+        elif variant == "distorted":
+            self.variant = traj_data.distorted
         self.limit = limit
-        self.__read_data__()
+        self.data_list = self.__read_data__()
 
     def __read_data__(self):
-        self.x_ori_loc, self.y_ori_loc = [], []
-        self.x_var_loc, self.y_var_loc = [], []
+        raise NotImplementedError()
+
+    def __len__(self):
+        return len(self.data_list[0])
+
+    def __getitem__(self, index):
+        return [torch.tensor(x[index]) for x in self.data_list]
+
+
+class SimilarityCDDDataset(SimilarityDataset):
+    def __read_data__(self):
+        x_ori_loc, y_ori_loc = [], []
+        x_var_loc, y_var_loc = [], []
         for i in range(len(self.original)):
             for j in range(i, len(self.original)):
-                if len(self.x_ori_loc) >= self.limit:
-                    return
-                self.x_ori_loc.append(self.original[i].locations)
-                self.y_ori_loc.append(self.original[j].locations)
-                self.x_var_loc.append(self.variant[i].locations)
-                self.y_var_loc.append(self.variant[j].locations)
-
-    def __len__(self):
-        return len(self.x_ori_loc)
-
-    def __getitem__(self, index):
-        return (
-            torch.tensor(self.x_ori_loc[index]),
-            torch.tensor(self.y_ori_loc[index]),
-            torch.tensor(self.x_var_loc[index]),
-            torch.tensor(self.y_var_loc[index]),
-        )
+                if len(x_ori_loc) >= self.limit:
+                    break
+                x_ori_loc.append(self.original[i].locations)
+                y_ori_loc.append(self.original[j].locations)
+                x_var_loc.append(self.variant[i].locations)
+                y_var_loc.append(self.variant[j].locations)
+            if len(x_ori_loc) >= self.limit:
+                break
+        return x_ori_loc, y_ori_loc, x_var_loc, y_var_loc
 
 
-class SimilarityKNNDataset(Dataset):
-    def __init__(self, traj_data: TrajData, limit=10000):
-        self.original = traj_data.original
-        self.variant = traj_data.cropped
-        self.limit = limit
-        self.__read_data__()
+class SimilarityKNNDataset(SimilarityDataset):
+    def __read_data__(self):
+        x_ori_loc = []
+        x_var_loc = []
+        for i in range(len(self.original)):
+            if len(x_ori_loc) >= self.limit:
+                return
+            x_ori_loc.append(self.original[i].locations)
+            x_var_loc.append(self.variant[i].locations)
+        return x_ori_loc, x_var_loc
+
+
+class FillingDataset(Dataset):
+    def __init__(self, traj_data: TrajData, length=128):
+        self.trajectories = traj_data.original
+        self.length = length
+        self.inputs, self.labels = self.__read_data__()
 
     def __read_data__(self):
-        self.x_ori_loc = []
-        self.x_var_loc = []
-        for i in range(len(self.original)):
-            if len(self.x_ori_loc) >= self.limit:
-                return
-            self.x_ori_loc.append(self.original[i].locations)
-            self.x_var_loc.append(self.variant[i].locations)
+        raise NotImplementedError()
 
     def __len__(self):
-        return len(self.x_ori_loc)
+        return len(self.inputs)
 
     def __getitem__(self, index):
-        return (
-            torch.tensor(self.x_ori_loc[index]),
-            torch.tensor(self.x_var_loc[index]),
-        )
+        return torch.tensor(self.inputs[index]), torch.tensor(self.labels[index])
+
+
+class MLMDataset(FillingDataset):
+    def __init__(self, traj_data: TrajData, ratio=0.15, num_var=5):
+        self.ratio = ratio
+        self.num_var = num_var
+        super().__init__(traj_data)
+
+    def __read_data__(self):
+        inputs, labels = [], []
+        for traj in self.trajectories:
+            for pos in range(max(1, len(traj) - self.length)):
+                locs = traj.locations[pos : pos + self.length]
+                for i in range(self.num_var):
+                    input = locs.copy()
+                    for j in range(len(input)):
+                        if random.random() < self.ratio:
+                            input[j] = SPECIAL_TOKENS["mask"]
+                    inputs.append(input)
+                    labels.append(locs)
+        return inputs, labels
+
+
+class AutoregressiveDataset(FillingDataset):
+    def __read_data__(self):
+        inputs, labels = [], []
+        for traj in self.trajectories:
+            for pos in range(max(1, len(traj) - self.length)):
+                locs = traj.locations[pos : pos + self.length]
+                inputs.append(locs[:-1])
+                labels.append(locs[1:])
+        return inputs, labels

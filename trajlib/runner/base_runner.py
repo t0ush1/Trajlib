@@ -75,7 +75,6 @@ class BaseRunner:
             train_loss = self.trainer.train(epoch)
             val_loss = self.trainer.validate()
             test_results = self.trainer.test()
-
             self.accelerator.wait_for_everyone()
 
             if self.accelerator.is_local_main_process:
@@ -96,7 +95,6 @@ class BaseRunner:
             self.trainer.scheduler.step()
 
         test_results = self.trainer.test()
-
         self.accelerator.wait_for_everyone()
 
         if self.accelerator.is_local_main_process:

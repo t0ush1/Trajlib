@@ -11,16 +11,19 @@ from trajlib.runner.utils.early_stopping import EarlyStopping
 
 
 class BaseTrainer:
-    def __init__(self, trainer_config, accelerator: Accelerator, model: nn.Module, dataset, geo_data: GeoData):
+    def __init__(
+        self, trainer_config, accelerator: Accelerator, model: nn.Module, dataset, geo_data: GeoData, collate_fn=None
+    ):
         self.trainer_config = trainer_config
         self.accelerator = accelerator
         self.model = model
         self.geo_data = geo_data
 
         train_dataset, val_dataset, test_dataset = dataset
-        self.train_loader = DataLoader(train_dataset, batch_size=trainer_config["batch_size"], shuffle=False)
-        self.val_loader = DataLoader(val_dataset, batch_size=trainer_config["batch_size"], shuffle=False)
-        self.test_loader = DataLoader(test_dataset, batch_size=trainer_config["batch_size"], shuffle=False)
+        batch_size = trainer_config["batch_size"]
+        self.train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
+        self.val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
+        self.test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
 
         if trainer_config["optimizer"] == "adam":
             self.optimizer = optim.Adam(self.model.parameters(), lr=trainer_config["learning_rate"])
@@ -29,7 +32,7 @@ class BaseTrainer:
             self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=10, gamma=0.1)
 
         if trainer_config["loss_function"] == "cross_entropy":
-            self.criterion = nn.CrossEntropyLoss()
+            self.criterion = nn.CrossEntropyLoss(ignore_index=-100)
 
         self.early_stopping = EarlyStopping(patience=7, delta=0)
 
