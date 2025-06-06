@@ -42,101 +42,25 @@ class TrajEmbedding(nn.Module):
         return x
 
 
-class TrajTransformer(nn.Module):
-    def __init__(self, encoder_config, embedding, pooling, task_head):
-        super(TrajTransformer, self).__init__()
+class TrajBackbone(nn.Module):
+    def __init__(self, d_model, embedding, encoder, pe, pooling, task_head):
+        super(TrajBackbone, self).__init__()
         self.embedding = embedding
-        self.positional_encoding = PositionalEncoding(encoder_config["d_model"])
-        self.encoder = Transformer(encoder_config)
+        self.pe = pe
+        if self.pe:
+            self.positional_encoding = PositionalEncoding(d_model)
+        self.encoder = encoder
         self.pooling = pooling
         self.task_head = task_head
 
     def forward(self, x, mask=None, geo_data: GeoData = None):
         x = self.embedding(x, geo_data)
-        x = self.positional_encoding(x)
+        if self.pe:
+            x = self.positional_encoding(x)
         x = self.encoder(x, mask)
         if self.pooling: # TODO 加CLS，取最后一个
             x = x.mean(dim=1)
-        x = self.task_head(x)
-        return x
-
-
-class TrajLSTM(nn.Module):
-    def __init__(self, encoder_config, embedding, task_head):
-        super(TrajLSTM, self).__init__()
-        self.embedding = embedding
-        self.encoder = LSTM(encoder_config)
-        self.task_head = task_head
-
-        # 便于外部查询最终序列输出维度
-        self.output_dim = encoder_config["hidden_size"] * (2 if encoder_config.get("bidirectional", False) else 1)
-
-    def forward(self, x, mask=None, geo_data: GeoData = None):
-        # -------- Embedding --------
-        if geo_data is not None:
-            # 图嵌入：embedding(节点特征, 边索引) → (N_nodes, d_model)
-            embedding = self.embedding(geo_data.x, geo_data.edge_index)
-            x = embedding[x]          # (B, T, d_model)
-        else:
-            # 普通 token/ID 或已有特征
-            x = self.embedding(x)      # (B, T, d_model)
-
-        x = self.encoder(x, mask)      # (B, T, hidden_size * directions)
-        # -------- Pool & Head --------
-        x = x[:, -1, :]
-        # x = x.mean(dim=1)              # 简单时序平均池化 (B, hidden*)
-        x = self.task_head(x)          # 输出维度由具体任务决定
-        return x
-
-
-class TrajCNN(nn.Module):
-    def __init__(self, encoder_config, embedding, task_head):
-        super(TrajCNN, self).__init__()
-        self.embedding = embedding
-        self.positional_encoding = PositionalEncoding(encoder_config["d_model"])
-        self.encoder = CNN(encoder_config)
-        self.task_head = task_head
-
-    def forward(self, x, mask=None, geo_data: GeoData = None):
-        # 如果有 GeoData，使用该数据来嵌入
-        if geo_data is not None:
-            embedding = self.embedding(geo_data.x, geo_data.edge_index)
-            x = embedding[x]
-        else:
-            x = self.embedding(x)
-        
-        x = self.positional_encoding(x)  # 添加位置编码
-        # 使用 CNNEncoder 提取时序特征
-        x = self.encoder(x, mask)
-        # 对所有时间步的特征进行平均（可以替换为其他聚合方式）
-        x = x.mean(dim=1)
-        # 通过任务头进行预测
-        x = self.task_head(x)
-        return x
-
-
-class TrajMLP(nn.Module):
-    def __init__(self, encoder_config, embedding, task_head):
-        super(TrajMLP, self).__init__()
-        self.embedding = embedding
-        self.positional_encoding = PositionalEncoding(encoder_config["d_model"])
-        self.encoder = MLP(encoder_config)
-        self.task_head = task_head
-
-    def forward(self, x, mask=None, geo_data: GeoData = None):
-        # 如果有 GeoData，使用该数据来嵌入
-        if geo_data is not None:
-            embedding = self.embedding(geo_data.x, geo_data.edge_index)
-            x = embedding[x]
-        else:
-            x = self.embedding(x)
-        
-        x = self.positional_encoding(x)  # 添加位置编码
-        # 使用 MLPEncoder 提取时序特征
-        x = self.encoder(x, mask)
-        # 对所有时间步的特征进行平均（可以替换为其他聚合方式）
-        x = x.mean(dim=1)
-        # 通过任务头进行预测
+            # x = x[:, -1, :]  # lstm?
         x = self.task_head(x)
         return x
 
@@ -164,6 +88,23 @@ def create_embedding(config):
     return TrajEmbedding(embedding, emb_dim, tokenized=data_config["data_form"] != "gps")
 
 
+def create_encoder(config):
+    encoder_config = config["encoder_config"]
+    encoder_name = encoder_config["encoder_name"]
+
+    match encoder_name:
+        case "transformer":
+            return True, Transformer(encoder_config)
+        case "lstm":
+            return False, LSTM(encoder_config)
+        case "cnn":
+            return True, CNN(encoder_config)
+        case "mlp":
+            return True, MLP(encoder_config)
+        case _:
+            raise ValueError()
+
+
 def create_task_head(config):
     task_config = config["task_config"]
     data_config = config["data_config"]
@@ -186,12 +127,6 @@ def create_task_head(config):
 def create_model(config):
     embedding = create_embedding(config)
     pooling, task_head = create_task_head(config)
-    if config["encoder_config"]["encoder_name"] == "transformer":
-        return TrajTransformer(config["encoder_config"], embedding, task_head)
-    elif config["encoder_config"]["encoder_name"] == "lstm":
-        return TrajLSTM(config["encoder_config"], embedding, task_head)
-    elif config["encoder_config"]["encoder_name"] == "cnn":
-        return TrajCNN(config["encoder_config"], embedding, task_head)
-    elif config["encoder_config"]["encoder_name"] == "mlp":
-        return TrajMLP(config["encoder_config"], embedding, task_head)
-    # return TrajTransformer(config["encoder_config"], embedding, pooling, task_head)
+    pe, encoder = create_encoder(config)
+    d_model = config["encoder_config"]["d_model"]
+    return TrajBackbone(d_model, embedding, encoder, pe, pooling, task_head)

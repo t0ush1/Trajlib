@@ -19,7 +19,15 @@ similarity_task_config = {
     "task_name": "similarity",
     "train_mode": "test-only",
     "dataset_prop": (0, 0, 1),
+    "variant": "cropped",  # cropped, distorted
     "sub-task": "kNN", # kNN, CDD
+}
+
+filling_task_config = {
+    "task_name": "filling",
+    "train_mode": "pre-train",
+    "dataset_prop": (0.9, 0.1, 0),
+    "sub-task": "autoregressive",  # mlm, autoregressive
 }
 
 embedding_config = {
@@ -29,46 +37,34 @@ embedding_config = {
     "embs_path": "",
 }
 
-transformer_encoder_config = {
-    "encoder_name": "transformer",
+encoder_config = {
+    "encoder_name": "lstm", # transformer, lstm, cnn, mlp
     "num_layers": 6,
     "d_model": embedding_config["emb_dim"],
-    "num_heads": 8,
-    "d_ff": 2048,
     "dropout": 0.1,
-}
 
-lstm_encoder_config = {
-    "encoder_name": "lstm",
-    "num_layers": 6,
-    "d_model": embedding_config["emb_dim"],
+    ## transformer
+    # "num_heads": 8,
+    # "d_ff": 2048,
+
+    ## lstm
     "hidden_size": 256,
     "bidirectional": False,
-    "dropout": 0.1,
+
+    ## cnn
+    # "hidden_size": 256,
+    # "kernel_size": 5,
+
+    ## mlp
+    # "hidden_size": 256,
 }
 
-cnn_encoder_config = {
-    "encoder_name": "cnn",
-    "num_layers": 6,
-    "d_model": embedding_config["emb_dim"],
-    "hidden_size": 256,
-    "kernel_size": 5,
-    "dropout": 0.1,
-}
-
-mlp_encoder_config = {
-    "encoder_name": "mlp",
-    "num_layers": 6,
-    "d_model": embedding_config["emb_dim"],
-    "hidden_size": 256,
-    "dropout": 0.1,
-}
 
 trainer_config = {
     "model_path": "./resource/model/backbone/backbone.pth",
     "batch_size": 64,
     "learning_rate": 1e-4,
-    "num_epochs": 20,
+    "num_epochs": 10,
     "optimizer": "adam",
     "loss_function": "cross_entropy",
     "lr_scheduler": "step_lr",
@@ -76,9 +72,9 @@ trainer_config = {
 
 config = {
     "data_config": data_config,
-    "task_config": similarity_task_config,
+    "task_config": prediction_task_config,
     "embedding_config": embedding_config,
-    "encoder_config": transformer_encoder_config,
+    "encoder_config": encoder_config,
     "trainer_config": trainer_config,
 }
 
