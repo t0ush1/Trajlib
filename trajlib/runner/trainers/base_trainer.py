@@ -55,8 +55,8 @@ class BaseTrainer:
     def train(self, epoch):
         raise NotImplementedError()
 
-    def validate(self):
+    def validate(self, epoch):
         raise NotImplementedError()
 
-    def test(self):
+    def test(self, epoch):
         raise NotImplementedError()

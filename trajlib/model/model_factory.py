@@ -52,7 +52,7 @@ class TrajTransformer(nn.Module):
         x = self.embedding(x, geo_data)
         x = self.positional_encoding(x)
         x = self.encoder(x, mask)
-        if self.pooling: # TODO 加CLS，取最后一个
+        if self.pooling:  # TODO 加CLS，取最后一个
             x = x.mean(dim=1)
         x = self.task_head(x)
         return x
@@ -92,10 +92,12 @@ def create_task_head(config):
             return True, nn.Linear(emb_dim, 2)
         case ({"task_name": "prediction"}, {"data_form": "grid", "vocab_size": vocab_size}):
             return True, nn.Linear(emb_dim, vocab_size)
-        case ({"task_name": "similarity"}, _):
+        case ({"task_name": "similarity"}, {"data_form": "grid"}):
             return True, nn.Identity()
         case ({"task_name": "filling"}, {"data_form": "grid", "vocab_size": vocab_size}):
             return False, nn.Linear(emb_dim, vocab_size)
+        case ({"task_name": "classification", "num_classes": num_classes}, {"data_form": "grid"}):
+            return True, nn.Linear(emb_dim, num_classes)
         case _:
             raise ValueError()
 

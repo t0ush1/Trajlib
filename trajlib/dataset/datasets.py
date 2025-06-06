@@ -2,6 +2,7 @@ import random
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+from collections import Counter
 
 from trajlib.data.data import TrajData, SPECIAL_TOKENS
 
@@ -39,12 +40,7 @@ class PredictionDataset(Dataset):
 class SimilarityDataset(Dataset):
     def __init__(self, traj_data: TrajData, variant, limit=10000):
         self.original = traj_data.original
-        if variant == "cropped":
-            self.variant = traj_data.cropped
-        elif variant == "distorted":
-            self.variant = traj_data.distorted
-        elif variant == "original":
-            self.variant = traj_data.original
+        self.variant = traj_data.original if variant == "original" else traj_data.variants[variant]
         self.limit = limit
         self.data_list = self.__read_data__()
 
@@ -99,9 +95,8 @@ class SimilarityKNNDataset(SimilarityDataset):
 
 
 class FillingDataset(Dataset):
-    def __init__(self, traj_data: TrajData, length=128):
+    def __init__(self, traj_data: TrajData):
         self.trajectories = traj_data.original
-        self.length = length
         self.inputs, self.labels = self.__read_data__()
 
     def __read_data__(self):
@@ -123,15 +118,13 @@ class MLMDataset(FillingDataset):
     def __read_data__(self):
         inputs, labels = [], []
         for traj in self.trajectories:
-            for pos in range(max(1, len(traj) - self.length)):
-                locs = traj.locations[pos : pos + self.length]
-                for i in range(self.num_var):
-                    input = locs.copy()
-                    for j in range(len(input)):
-                        if random.random() < self.ratio:
-                            input[j] = SPECIAL_TOKENS["mask"]
-                    inputs.append(input)
-                    labels.append(locs)
+            for i in range(self.num_var):
+                input = traj.locations.copy()
+                for j in range(len(input)):
+                    if random.random() < self.ratio:
+                        input[j] = SPECIAL_TOKENS["mask"]
+                inputs.append(input)
+                labels.append(traj.locations)
         return inputs, labels
 
 
@@ -139,8 +132,31 @@ class AutoregressiveDataset(FillingDataset):
     def __read_data__(self):
         inputs, labels = [], []
         for traj in self.trajectories:
-            for pos in range(max(1, len(traj) - self.length)):
-                locs = traj.locations[pos : pos + self.length]
-                inputs.append(locs[:-1])
-                labels.append(locs[1:])
+            inputs.append(traj.locations[:-1])
+            labels.append(traj.locations[1:])
         return inputs, labels
+
+
+class ClassificationDataset(Dataset):
+    def __init__(self, traj_data: TrajData, class_attr):
+        self.trajectories = traj_data.original
+        self.class_attr = class_attr
+        self.__read_data__()
+
+    def __read_data__(self):
+        class_values = [traj.attributes[self.class_attr] for traj in self.trajectories]
+        counter = Counter(class_values)
+        print(counter)
+        sorted_values = sorted(counter.keys(), key=lambda c: -counter[c])
+        self.class_mapping = {cls: idx for idx, cls in enumerate(sorted_values)}
+
+        self.inputs, self.labels = [], []
+        for traj, val in zip(self.trajectories, class_values):
+            self.inputs.append(traj.locations)
+            self.labels.append(self.class_mapping[val])
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, index):
+        return torch.tensor(self.inputs[index]), torch.tensor(self.labels[index])

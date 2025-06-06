@@ -8,6 +8,7 @@ from trajlib.dataset.datasets import (
     SimilarityKNNDataset,
     MLMDataset,
     AutoregressiveDataset,
+    ClassificationDataset,
 )
 
 
@@ -27,6 +28,9 @@ def create_dataset(config, data: TrajData):
             dataset = MLMDataset(data)
         case {"task_name": "filling", "sub-task": "autoregressive"}:
             dataset = AutoregressiveDataset(data)
+        case {"task_name": "classification", "class_attr": class_attr}:
+            dataset = ClassificationDataset(data, class_attr)
+            task_config["num_classes"] = len(dataset.class_mapping)
         case _:
             raise ValueError()
 

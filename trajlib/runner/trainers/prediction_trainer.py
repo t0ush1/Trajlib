@@ -10,7 +10,7 @@ class PredictionTrainer(BaseTrainer):
         self.model.train()
         train_loss = 0
         for x_loc, x_ts, y_loc, y_ts in tqdm(
-            self.train_loader, disable=not self.accelerator.is_local_main_process, desc=f"Epoch: {epoch+1}"
+            self.train_loader, disable=not self.accelerator.is_local_main_process, desc=f"Epoch {epoch+1} Train"
         ):
             x_loc = x_loc.to(self.accelerator.device)
             y_loc = y_loc.to(self.accelerator.device)
@@ -25,11 +25,13 @@ class PredictionTrainer(BaseTrainer):
         train_loss /= len(self.train_loader)
         return train_loss
 
-    def validate(self):
+    def validate(self, epoch):
         self.model.eval()
         val_loss = 0
         with torch.no_grad():
-            for x_loc, x_ts, y_loc, y_ts in self.val_loader:
+            for x_loc, x_ts, y_loc, y_ts in tqdm(
+                self.val_loader, disable=not self.accelerator.is_local_main_process, desc=f"Epoch {epoch+1} Valid"
+            ):
                 x_loc = x_loc.to(self.accelerator.device)
                 y_loc = y_loc.to(self.accelerator.device)
                 output = self.model(x_loc)
@@ -41,11 +43,15 @@ class PredictionTrainer(BaseTrainer):
             val_loss /= len(self.val_loader)
         return val_loss
 
-    def test(self):
+    def test(self, epoch):
         self.model.eval()
         all_preds, all_trues = [], []
         with torch.no_grad():
-            for x_loc, x_ts, y_loc, y_ts in self.test_loader:
+            for x_loc, x_ts, y_loc, y_ts in tqdm(
+                self.val_loader,
+                disable=not self.accelerator.is_local_main_process,
+                desc=f"Epoch {epoch+1}  Test" if epoch >= 0 else "Final Test",
+            ):
                 x_loc = x_loc.to(self.accelerator.device)
                 y_loc = y_loc.to(self.accelerator.device)
                 output = self.model(x_loc)

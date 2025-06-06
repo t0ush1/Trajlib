@@ -15,7 +15,7 @@ SPECIAL_TOKENS = {
 
 
 class Trajectory:
-    def __init__(self, traj_id, locations, timestamps, attributes=None):
+    def __init__(self, traj_id, locations, timestamps, attributes):
         self.traj_id: int = traj_id
         self.locations: list[int | list[float]] = locations
         self.timestamps: list[int] = timestamps
@@ -26,25 +26,42 @@ class Trajectory:
 
 
 class TrajData:
-    def __init__(self, trajectories):
+    def __init__(self, trajectories, window, varients):
         self.original: list[Trajectory] = []
-        self.cropped: list[Trajectory] = []
-        self.distorted: list[Trajectory] = []
+        self.variants: dict[str, list[Trajectory]] = {"original": self.original}
+
+        processors = {
+            "cropped": self.__crop__,
+            "distorted": self.__distort__,
+        }
+
         for i, traj in enumerate(trajectories):
-            self.original.append(self.__transform__(i, *traj))
-            self.cropped.append(self.__transform__(i, *self.__crop__(*traj)))
-            self.distorted.append(self.__transform__(i, *self.__distort__(*traj)))
+            coordinates, timestamps, attributes = traj
+            threshold, window_size, stride = window
+            for pos in range(0, max(1, len(coordinates) - window_size), stride):
+                if len(coordinates) - pos < threshold:
+                    break
+                coords = coordinates[pos : pos + window_size]
+                times = timestamps[pos : pos + window_size]
+                # attrs = {k: v[pos : pos + window_size] if isinstance(v, list) else v for k, v in attributes.items()}
+
+                self.original.append(self.__transform__(i, coords, times, attributes))
+                for var in varients:
+                    variant = self.variants.get(var, [])
+                    var_coords, var_times = processors[var](coords, times)
+                    variant.append(self.__transform__(i, var_coords, var_times, attributes))
 
     def __len__(self):
         return len(self.original)
 
-    def __transform__(self, traj_id, coordinates, timestamps):
+    def __transform__(self, traj_id, coordinates, timestamps, attributes):
         raise NotImplementedError()
 
-    def __crop__(self, coordinates, timestamps, ratio=0.8):
+    def __crop__(self, coordinates, timestamps):
         n = len(coordinates)
         if n <= 2:
             return coordinates, timestamps
+        ratio = 0.8
         mid_indices = list(range(1, n - 1))
         keep_count = int(ratio * len(mid_indices))
         keep_mid = sorted(random.sample(mid_indices, keep_count))
@@ -65,39 +82,39 @@ class TrajData:
 
 
 class GPSTrajData(TrajData):
-    def __init__(self, trajectories):
-        super().__init__(trajectories)
-
-    def __transform__(self, traj_id, coordinates, timestamps):
-        return Trajectory(traj_id, coordinates, timestamps)
+    def __transform__(self, traj_id, coordinates, timestamps, attributes):
+        return Trajectory(traj_id, coordinates, timestamps, attributes)
 
 
 class GridTrajData(TrajData):
-    def __init__(self, trajectories, grid: SimpleGridSystem):
+    def __init__(self, trajectories, window, varients, grid: SimpleGridSystem, unique):
         self.grid = grid
-        super().__init__(trajectories)
+        self.unique = unique
+        super().__init__(trajectories, window, varients)
 
-    def __transform__(self, traj_id, coordinates, timestamps):
-        self.grid_locations = []
-        self.grid_coordinates = []
-        for lon, lat in coordinates:
+    def __transform__(self, traj_id, coordinates, timestamps, attributes):
+        grid_locations = []
+        filtered_timestamps = []
+        last_loc = None
+        for (lon, lat), ts in zip(coordinates, timestamps):
             point = trajdl_cpp.convert_gps_to_webmercator(lon, lat)
             loc = self.grid.locate_unsafe(point.x, point.y)
             x, y = self.grid.to_grid_coordinate_unsafe(loc)
-            if self.grid.in_boundary_by_grid_coordinate(x, y):
-                self.grid_locations.append(int(loc))
-                self.grid_coordinates.append([x, y])
-        return Trajectory(traj_id, self.grid_locations, timestamps)
+            if self.grid.in_boundary_by_grid_coordinate(x, y) and (not self.unique or loc != last_loc):
+                grid_locations.append(int(loc))
+                filtered_timestamps.append(ts)
+                last_loc = loc
+        return Trajectory(traj_id, grid_locations, filtered_timestamps, attributes)
 
 
 class RoadnetTrajData(TrajData):
-    def __init__(self, trajectories, road_net: RoadnetSystem):
+    def __init__(self, trajectories, window, varients, road_net: RoadnetSystem):
         self.road_net = road_net
-        super().__init__(trajectories)
+        super().__init__(trajectories, window, varients)
 
-    def __transform__(self, traj_id, coordinates, timestamps):
+    def __transform__(self, traj_id, coordinates, timestamps, attributes):
         osmids, _, timestamps = self.road_net.get_road_osmids_for_points(coordinates=coordinates, timestamps=timestamps)
-        return Trajectory(traj_id, osmids, timestamps)
+        return Trajectory(traj_id, osmids, timestamps, attributes)
 
 
 class GraphData:

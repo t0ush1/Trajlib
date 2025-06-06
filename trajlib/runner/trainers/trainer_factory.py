@@ -1,6 +1,7 @@
 from trajlib.runner.trainers.prediction_trainer import PredictionTrainer
 from trajlib.runner.trainers.similarity_trainer import SimilarityMSSTrainer, SimilarityCDDTrainer, SimilarityKNNTrainer
 from trajlib.runner.trainers.filling_trainer import FillingTrainer
+from trajlib.runner.trainers.classification_trainer import ClassificationTrainer
 
 
 def create_trainer(config, accelerator, model, dataset, geo_data):
@@ -18,5 +19,7 @@ def create_trainer(config, accelerator, model, dataset, geo_data):
             return SimilarityKNNTrainer(*args)
         case {"task_name": "filling", "sub-task": sub_task}:
             return FillingTrainer(*args, sub_task=sub_task)
+        case {"task_name": "classification"}:
+            return ClassificationTrainer(*args)
         case _:
             raise ValueError()

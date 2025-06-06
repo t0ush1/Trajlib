@@ -7,38 +7,18 @@ from trajlib.data.data import SPECIAL_TOKENS
 from trajlib.runner.trainers.base_trainer import BaseTrainer
 
 
-def mlm_collate_fn(batch):
+def collate_fn(batch):
     input_batch, label_batch = zip(*batch)
     input = pad_sequence(input_batch, batch_first=True, padding_value=SPECIAL_TOKENS["pad"])
-    label = pad_sequence(label_batch, batch_first=True, padding_value=SPECIAL_TOKENS["pad"])
-    label[input != SPECIAL_TOKENS["mask"]] = SPECIAL_TOKENS["ignore"]
-    mask = input != SPECIAL_TOKENS["pad"]
-    mask = mask.unsqueeze(1) & mask.unsqueeze(2)
-    return input, label, mask.int()
-
-
-def autoregressive_collate_fn(batch):
-    input_batch, label_batch = zip(*batch)
-    input = pad_sequence(input_batch, batch_first=True, padding_value=SPECIAL_TOKENS["pad"])
-    label = pad_sequence(label_batch, batch_first=True, padding_value=SPECIAL_TOKENS["pad"])
-    label[input == SPECIAL_TOKENS["pad"]] = SPECIAL_TOKENS["ignore"]
+    label = torch.tensor(label_batch)
     pad_mask = input != SPECIAL_TOKENS["pad"]
-    causal_mask = torch.tril(torch.ones(input.size(1), input.size(1))).bool()
-    mask = pad_mask.unsqueeze(1) & pad_mask.unsqueeze(2) & causal_mask.unsqueeze(0)
+    mask = pad_mask.unsqueeze(1) & pad_mask.unsqueeze(2)
     return input, label, mask.int()
 
 
-# TODO 改名为填补任务，masked/padding/mask在dataset还是collate_fn中处理？写两个版本
-class FillingTrainer(BaseTrainer):
-    def __init__(self, trainer_config, accelerator, model, dataset, geo_data, sub_task):
-        super().__init__(
-            trainer_config,
-            accelerator,
-            model,
-            dataset,
-            geo_data,
-            mlm_collate_fn if sub_task == "mlm" else autoregressive_collate_fn,
-        )
+class ClassificationTrainer(BaseTrainer):
+    def __init__(self, trainer_config, accelerator, model, dataset, geo_data):
+        super().__init__(trainer_config, accelerator, model, dataset, geo_data, collate_fn)
 
     def train(self, epoch):
         self.model.train()
@@ -51,8 +31,6 @@ class FillingTrainer(BaseTrainer):
             mask = mask.to(self.accelerator.device)
             output = self.model(input, mask=mask, geo_data=self.geo_data)
 
-            output = output.view(-1, output.size(-1))
-            label = label.view(-1)
             loss = self.criterion(output, label)
             self.optimizer.zero_grad()
             self.accelerator.backward(loss)
@@ -74,14 +52,38 @@ class FillingTrainer(BaseTrainer):
                 mask = mask.to(self.accelerator.device)
                 output = self.model(input, mask=mask)
 
-                outputs, labels = self.accelerator.gather_for_metrics([output, label])
-                outputs = outputs.view(-1, outputs.size(-1))
-                labels = labels.view(-1)
-                loss = self.criterion(outputs, labels)
+                preds, trues = self.accelerator.gather_for_metrics([output, label])
+                loss = self.criterion(preds, trues)
 
                 val_loss += loss.item()
             val_loss /= len(self.val_loader)
         return val_loss
 
     def test(self, epoch):
-        return {}
+        self.model.eval()
+        all_preds, all_trues = [], []
+        with torch.no_grad():
+            for input, label, mask in tqdm(
+                self.test_loader,
+                disable=not self.accelerator.is_local_main_process,
+                desc=f"Epoch {epoch+1}  Test" if epoch >= 0 else "Final Test",
+            ):
+                input = input.to(self.accelerator.device)
+                label = label.to(self.accelerator.device)
+                mask = mask.to(self.accelerator.device)
+                output = self.model(input, mask=mask)
+
+                preds, trues = self.accelerator.gather_for_metrics([output, label])
+                all_preds.append(preds)
+                all_trues.append(trues)
+        all_preds = torch.cat(all_preds, dim=0)
+        all_trues = torch.cat(all_trues, dim=0)
+
+        test_loss = F.cross_entropy(all_preds, all_trues).item()
+        pred_labels = torch.argmax(all_preds, dim=1)
+        test_acc = (pred_labels == all_trues).sum().item() / all_trues.size(0)
+
+        return {
+            "Loss": test_loss,
+            "Accuracy": test_acc,
+        }

@@ -12,8 +12,8 @@ def collate_fn(batch):
     locs, masks = [], []
     for trajs in zip(*batch):
         loc = pad_sequence(trajs, batch_first=True, padding_value=SPECIAL_TOKENS["pad"])
-        mask = loc != SPECIAL_TOKENS["pad"]  # (B, L)
-        mask = mask.unsqueeze(1) & mask.unsqueeze(2)  # (B, L, L)
+        pad_mask = loc != SPECIAL_TOKENS["pad"]  # (B, L)
+        mask = pad_mask.unsqueeze(1) & pad_mask.unsqueeze(2)  # (B, L, L)
         locs.append(loc)
         masks.append(mask.int())
     return locs, masks
@@ -23,12 +23,12 @@ class SimilarityTrainer(BaseTrainer):
     def __init__(self, trainer_config, accelerator, model, dataset, geo_data):
         super().__init__(trainer_config, accelerator, model, dataset, geo_data, collate_fn)
 
-    def test(self):
+    def test(self, epoch):
         self.model.eval()
         all_outputs = []
         with torch.no_grad():
             for locs, masks in tqdm(
-                self.test_loader, disable=not self.accelerator.is_local_main_process, desc=f"Testing"
+                self.test_loader, disable=not self.accelerator.is_local_main_process, desc=f"Final Test"
             ):
                 locs = [x.to(self.accelerator.device) for x in locs]
                 masks = [m.to(self.accelerator.device) for m in masks]
