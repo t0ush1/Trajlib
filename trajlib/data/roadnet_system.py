@@ -93,14 +93,14 @@ class RoadnetSystem:
 
         # print(len(timestamps), len(osmids))
         if len(timestamps) != len(osmids):
-            mmviz.plot_map(
-                self.map_con,
-                matcher=matcher,
-                show_labels=False,
-                show_matching=True,
-                filename=None,
-                figwidth=5,
-            )
+            # mmviz.plot_map(
+            #     self.map_con,
+            #     matcher=matcher,
+            #     show_labels=False,
+            #     show_matching=True,
+            #     filename=None,
+            #     figwidth=5,
+            # )
             if filter_method == "delete":
                 # TODO
                 osmids = []

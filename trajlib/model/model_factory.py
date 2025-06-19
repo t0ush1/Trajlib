@@ -34,7 +34,11 @@ class TrajEmbedding(nn.Module):
         for mask in masks.values():
             x[mask] = 0
 
-        x = self.embedding(x) if geo_data is None else self.embedding(geo_data.x, geo_data.edge_index)[x]
+        x = x.long() 
+        if geo_data is None:
+            x = self.embedding(x)  # 当 geo_data 为 None 时，只传递 x
+        else:
+            x = self.embedding(geo_data.x, geo_data.edge_index)[x]
 
         for idx, mask in masks.items():
             x[mask] = self.special_embs[idx]  # TODO 广播？
@@ -54,7 +58,13 @@ class TrajBackbone(nn.Module):
         self.task_head = task_head
 
     def forward(self, x, mask=None, geo_data: GeoData = None):
+        # if geo_data is None:
+        #     x = self.embedding(x)  # 当 geo_data 为 None 时，只传递 x
+        # else:
+        #     x = self.embedding(geo_data.x, geo_data.edge_index)[x]
+
         x = self.embedding(x, geo_data)
+
         if self.pe:
             x = self.positional_encoding(x)
         x = self.encoder(x, mask)
@@ -81,7 +91,7 @@ def create_embedding(config):
         case {"data_form": "grid" | "roadnet"}, {"emb_name": "normal"}:
             embedding = nn.Embedding(vocab_size, emb_dim)
         case {"data_form": "grid" | "roadnet"}, {"emb_name": "gat" | "gcn"}:
-            embedding = GNNWithEmbedding(vocab_size, emb_dim)
+            embedding = GNNWithEmbedding(embedding_config["emb_name"], vocab_size, emb_dim)
         case _:
             raise ValueError()
 
@@ -114,11 +124,11 @@ def create_task_head(config):
     match (task_config, data_config):
         case ({"task_name": "prediction"}, {"data_form": "gps"}):
             return True, nn.Linear(emb_dim, 2)
-        case ({"task_name": "prediction"}, {"data_form": "grid", "vocab_size": vocab_size}):
+        case ({"task_name": "prediction"}, {"data_form": "grid" | "roadnet", "vocab_size": vocab_size}):
             return True, nn.Linear(emb_dim, vocab_size)
         case ({"task_name": "similarity"}, _):
             return True, nn.Identity()
-        case ({"task_name": "filling"}, {"data_form": "grid", "vocab_size": vocab_size}):
+        case ({"task_name": "filling"}, {"data_form": "grid" | "roadnet", "vocab_size": vocab_size}):
             return False, nn.Linear(emb_dim, vocab_size)
         case _:
             raise ValueError()

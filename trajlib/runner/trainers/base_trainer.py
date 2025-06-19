@@ -33,6 +33,9 @@ class BaseTrainer:
 
         if trainer_config["loss_function"] == "cross_entropy":
             self.criterion = nn.CrossEntropyLoss(ignore_index=-100)
+            
+        if trainer_config["loss_function"] == "mse":  # 使用MSE时检查
+            self.criterion = nn.MSELoss()  # 使用均方误差损失
 
         self.early_stopping = EarlyStopping(patience=7, delta=0)
 

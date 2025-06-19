@@ -53,12 +53,16 @@ class BaseRunner:
 
     def _save_model(self):
         path = self.config["trainer_config"]["model_path"]
+        log_path = self.config["trainer_config"]["log_path"]
         state_dict = {k: v for k, v in self.model.state_dict().items() if not k.startswith("task_head")}
         torch.save(state_dict, path)
+        torch.save(state_dict, log_path)
 
     def _load_model(self):
         path = self.config["trainer_config"]["model_path"]
+        log_path = self.config["trainer_config"]["log_path"]
         state_dict = torch.load(path, weights_only=True)
+        torch.save(state_dict, log_path)
         self.model.load_state_dict(state_dict, strict=False)
 
     def _log_results(self, results):

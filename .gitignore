@@ -26,7 +26,8 @@ env/                  # 另一个常见的虚拟环境目录
 .idea/                # JetBrains IDE（如 PyCharm）配置文件
 
 # 忽略日志文件
-*.log
+wandb/
+log/
 
 # 忽略依赖库或包
 node_modules/         # Node.js 项目依赖目录
