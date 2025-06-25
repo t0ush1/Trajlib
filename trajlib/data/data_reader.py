@@ -4,7 +4,7 @@ import transbigdata as tbd
 from coord_convert import transform
 
 
-def read_data_chengdu(filepath, nrows, clean=False, to_gps=False):
+def read_data_chengdu(filepath, nrows, clean=False):
     data = pd.read_csv(
         filepath,
         names=["driver_id", "order_id", "timestamp", "lon", "lat"],
@@ -33,11 +33,8 @@ def read_data_chengdu(filepath, nrows, clean=False, to_gps=False):
     for traj_id, group in data.groupby("order_id"):
         group = group.sort_values(by="timestamp")
         coordinates = group[["lon", "lat"]].values.tolist()
+        coordinates = [transform.gcj2wgs(lon, lat) for lon, lat in coordinates]
         timestamps = group["timestamp"].values.tolist()
-
-        if to_gps:
-            coordinates = [transform.gcj2wgs(lon, lat) for lon, lat in coordinates]
-
         trajectories.append((coordinates, timestamps, {}))
     return trajectories
 

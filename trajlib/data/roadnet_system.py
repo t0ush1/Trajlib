@@ -20,6 +20,7 @@ class RoadnetSystem:
         """
         self.bounds = bounds
         self.cache_dir = cache_dir
+        ox.settings.cache_folder = cache_dir
         self.network_type = network_type
         self.map_con, self.nodes, self.edges, self.edge_num = self._get_roadnetwork()
         self.edges = self.edges.sort_index()  # 若已是 MultiIndex，直接排序
@@ -67,7 +68,7 @@ class RoadnetSystem:
         return map_con, nodes, edges, len(unique_osmid)
 
     def get_road_osmids_for_points(
-        self, coordinates: List[Tuple[float, float]], timestamps, filter_method="cut"
+        self, coordinates: List[Tuple[float, float]]
     ) -> Tuple[List[str], List[Tuple[int, int]]]:
         """
         根据轨迹点坐标获取对应的路段osmid和原始(u,v)节点对
@@ -92,24 +93,17 @@ class RoadnetSystem:
             osmids.append(osmid)
 
         # print(len(timestamps), len(osmids))
-        if len(timestamps) != len(osmids):
-            mmviz.plot_map(
-                self.map_con,
-                matcher=matcher,
-                show_labels=False,
-                show_matching=True,
-                filename=None,
-                figwidth=5,
-            )
-            if filter_method == "delete":
-                # TODO
-                osmids = []
-                timestamps = []
-            elif filter_method == "cut":
-                timestamps = timestamps[0 : len(osmids)]
-                if len(osmids) == 0:
-                    print("error:no osmids!")
-        return osmids, uv_pairs, timestamps
+        # if len(coordinates) != len(osmids):
+        # print("Warning", len(timestamps), len(osmids))
+        # mmviz.plot_map(
+        #     self.map_con,
+        #     matcher=matcher,
+        #     show_labels=False,
+        #     show_matching=True,
+        #     filename=None,
+        #     figwidth=5,
+        # )
+        return osmids, uv_pairs
 
     def _match_gps_path(
         self, lon_lat_list: List[Tuple[float, float]], visualization: bool = False
@@ -119,15 +113,15 @@ class RoadnetSystem:
 
         matcher = DistanceMatcher(
             self.map_con,
-            max_dist=300,
-            max_dist_init=250,
-            min_prob_norm=0.0001,
+            max_dist=500,
+            max_dist_init=500,
+            min_prob_norm=0.01,
             non_emitting_length_factor=0.95,
             obs_noise=50,
             obs_noise_ne=50,
             dist_noise=50,
             max_lattice_width=20,
-            non_emitting_states=False,
+            non_emitting_states=False,  # TODO ？
         )
         # matcher = DistanceMatcher(
         #     self.map_con,

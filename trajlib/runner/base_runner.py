@@ -4,9 +4,9 @@ import numpy as np
 import torch
 import wandb
 
-from trajlib.data.data_factory import create_data
+from trajlib.data.data_factory import create_data, load_data
 from trajlib.dataset.dataset_factory import create_dataset
-from trajlib.model.model_factory import create_model
+from trajlib.model.model_factory import create_model, pretrain_embedding
 from trajlib.runner.trainers.trainer_factory import create_trainer
 
 
@@ -20,15 +20,19 @@ class BaseRunner:
 
         self.config = config
         self.accelerator = accelerate.Accelerator(step_scheduler_with_optimizer=False)
-        traj_data, graph_data = create_data(config)
+
+        if self.accelerator.is_local_main_process:
+            create_data(config, overwrite=False)
+        self.accelerator.wait_for_everyone()
+
+        traj_data, grid_graph_data, road_graph_data = load_data(config)
         self.dataset = create_dataset(config, traj_data)
-        self.geo_data = (
-            graph_data.to_geo_data().to(self.accelerator.device)
-            if graph_data is not None
-            and not config["embedding_config"]["pre-trained"]
-            and config["embedding_config"]["emb_name"] != "normal"
-            else None
-        )
+        self.grid_geo_data = grid_graph_data.to_geo_data()
+        self.road_geo_data = road_graph_data.to_geo_data()
+
+        if self.accelerator.is_local_main_process:
+            pretrain_embedding(config, self.grid_geo_data, self.road_geo_data, overwrite=False)
+        self.accelerator.wait_for_everyone()
 
         self.model = create_model(config)
         if config["task_config"]["train_mode"] != "pre-train":
@@ -39,15 +43,16 @@ class BaseRunner:
             if self.accelerator.is_local_main_process:
                 print("Load model successfully")
 
-        self.trainer = create_trainer(config, self.accelerator, self.model, self.dataset, self.geo_data)
+        self.trainer = create_trainer(
+            config, self.accelerator, self.model, self.dataset, self.grid_geo_data, self.road_geo_data
+        )
 
         if self.accelerator.is_local_main_process:
+            # TODO
             wandb_config = {
                 "data_name": config["data_config"]["data_name"],
-                "data_form": config["data_config"]["data_form"],
-                "emb_name": config["embedding_config"]["emb_name"],
+                # "emb_name": config["embedding_config"]["emb_name"],
                 "task_name": config["task_config"]["task_name"],
-                "train_mode": config["task_config"]["train_mode"],
             }
             wandb.init(project=config["encoder_config"]["encoder_name"], config=wandb_config)
 

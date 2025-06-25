@@ -1,9 +1,8 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch_geometric.nn as gnn
+from torch_geometric.data import Data
 
-from trajlib.data.data import GraphData
 from trajlib.model.embedding.embedding_trainer import EmbeddingTrainer
 
 
@@ -19,7 +18,7 @@ class GNNWithEmbedding(nn.Module):
         }
         if embedding_name == "gat":
             self.gnn = gnn.GAT(**gnn_config, heads=4)
-        else:
+        elif embedding_name == "gcn":
             self.gnn = gnn.GCN(**gnn_config, cached=True)
 
     def forward(self, x, edge_index):
@@ -29,18 +28,11 @@ class GNNWithEmbedding(nn.Module):
 
 
 class GAETrainer(EmbeddingTrainer):
-    def __init__(self, embedding_config, graph_data: GraphData):
-        name = embedding_config["emb_name"]
-        extra_config = {
-            "ckpt_path": f"./resource/model/embedding/{name}.pth",
-            "embs_path": f"./resource/model/embedding/{name}.pkl",
-            "num_epochs": 200,
-            "patience": 15,
-        }
-        super().__init__(embedding_config, extra_config)
+    def __init__(self, emb_name, emb_dim, embs_path, data: Data):
+        super().__init__(emb_name, embs_path, num_epochs=200, patience=15)
 
-        self.data = graph_data.to_geo_data().to(self.device)
-        self.model = gnn.GAE(GNNWithEmbedding(name, len(graph_data.nodes), embedding_config["emb_dim"])).to(self.device)
+        self.data = data.to(self.device)
+        self.model = gnn.GAE(GNNWithEmbedding(emb_name, len(data.num_nodes), emb_dim)).to(self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-2)
 
     def _train_one_epoch(self):

@@ -1,35 +1,33 @@
 import torch
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
 
-from trajlib.data.data import SPECIAL_TOKENS
-from trajlib.runner.trainers.base_trainer import BaseTrainer
+from trajlib.data.data import SpecialToken
+from trajlib.runner.trainers.base_trainer import BaseTrainer, pad_trajectory
 
 
 def collate_fn(batch):
-    input_batch, label_batch = zip(*batch)
-    input = pad_sequence(input_batch, batch_first=True, padding_value=SPECIAL_TOKENS["pad"])
+    traj_batch, label_batch = zip(*batch)
+    traj = pad_trajectory(traj_batch)
     label = torch.tensor(label_batch)
-    pad_mask = input != SPECIAL_TOKENS["pad"]
+
+    pad_mask = traj[1] != SpecialToken.PAD
     mask = pad_mask.unsqueeze(1) & pad_mask.unsqueeze(2)
-    return input, label, mask.int()
+    return traj, label, mask.int()
 
 
 class ClassificationTrainer(BaseTrainer):
-    def __init__(self, trainer_config, accelerator, model, dataset, geo_data):
-        super().__init__(trainer_config, accelerator, model, dataset, geo_data, collate_fn)
+    def __init__(self, *args):
+        super().__init__(*args, collate_fn=collate_fn)
 
     def train(self, epoch):
         self.model.train()
         train_loss = 0
-        for input, label, mask in tqdm(
+        for traj, label, mask in tqdm(
             self.train_loader, disable=not self.accelerator.is_local_main_process, desc=f"Epoch {epoch+1} Train"
         ):
-            input = input.to(self.accelerator.device)
+            output = self._call_model(traj, mask=mask)
             label = label.to(self.accelerator.device)
-            mask = mask.to(self.accelerator.device)
-            output = self.model(input, mask=mask, geo_data=self.geo_data)
 
             loss = self.criterion(output, label)
             self.optimizer.zero_grad()
@@ -44,15 +42,14 @@ class ClassificationTrainer(BaseTrainer):
         self.model.eval()
         val_loss = 0
         with torch.no_grad():
-            for input, label, mask in tqdm(
+            for traj, label, mask in tqdm(
                 self.val_loader, disable=not self.accelerator.is_local_main_process, desc=f"Epoch {epoch+1} Valid"
             ):
-                input = input.to(self.accelerator.device)
+                output = self._call_model(traj, mask=mask)
                 label = label.to(self.accelerator.device)
-                mask = mask.to(self.accelerator.device)
-                output = self.model(input, mask=mask)
 
-                preds, trues = self.accelerator.gather_for_metrics([output, label])
+                preds = self.accelerator.gather_for_metrics(output)
+                trues = self.accelerator.gather_for_metrics(label)
                 loss = self.criterion(preds, trues)
 
                 val_loss += loss.item()
@@ -63,17 +60,16 @@ class ClassificationTrainer(BaseTrainer):
         self.model.eval()
         all_preds, all_trues = [], []
         with torch.no_grad():
-            for input, label, mask in tqdm(
+            for traj, label, mask in tqdm(
                 self.test_loader,
                 disable=not self.accelerator.is_local_main_process,
                 desc=f"Epoch {epoch+1}  Test" if epoch >= 0 else "Final Test",
             ):
-                input = input.to(self.accelerator.device)
+                output = self._call_model(traj, mask=mask)
                 label = label.to(self.accelerator.device)
-                mask = mask.to(self.accelerator.device)
-                output = self.model(input, mask=mask)
 
-                preds, trues = self.accelerator.gather_for_metrics([output, label])
+                preds = self.accelerator.gather_for_metrics(output)
+                trues = self.accelerator.gather_for_metrics(label)
                 all_preds.append(preds)
                 all_trues.append(trues)
         all_preds = torch.cat(all_preds, dim=0)

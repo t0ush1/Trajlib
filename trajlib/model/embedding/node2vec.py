@@ -1,25 +1,19 @@
 import torch
 import torch_geometric.nn as gnn
+from torch_geometric.data import Data
 from tqdm import tqdm
 
-from trajlib.data.data import GraphData
 from trajlib.model.embedding.embedding_trainer import EmbeddingTrainer
 
 
 class Node2VecTrainer(EmbeddingTrainer):
-    def __init__(self, embedding_config, graph_data: GraphData):
-        extra_config = {
-            "ckpt_path": "./resource/model/embedding/node2vec.pth",
-            "embs_path": "./resource/model/embedding/node2vec.pkl",
-            "num_epochs": 8,
-            "patience": 8,
-        }
-        super().__init__(embedding_config, extra_config)
+    def __init__(self, emb_name, emb_dim, embs_path, geo_data: Data):
+        super().__init__(emb_name, embs_path, num_epochs=8, patience=8)
 
-        self.data = graph_data.to_geo_data().to(self.device)
+        self.data = geo_data.to(self.device)
         self.model = gnn.Node2Vec(
             self.data.edge_index,
-            embedding_dim=embedding_config["emb_dim"],
+            embedding_dim=emb_dim,
             walk_length=50,
             context_size=10,
             walks_per_node=10,

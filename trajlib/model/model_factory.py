@@ -4,37 +4,81 @@ import torch
 import torch.nn as nn
 from torch_geometric.data import Data as GeoData
 
-from trajlib.data.data import SPECIAL_TOKENS
+from trajlib.data.data import SpecialToken
+from trajlib.model.embedding.embedding_trainer import EmbeddingTrainer
+from trajlib.model.embedding.gnn import GAETrainer
+from trajlib.model.embedding.node2vec import Node2VecTrainer
 from trajlib.model.transformer import Transformer
 from trajlib.model.positional_encoding import PositionalEncoding
 from trajlib.model.embedding.gnn import GNNWithEmbedding
 
 
-class TrajEmbedding(nn.Module):
-    def __init__(self, embedding, emb_dim, tokenized=False):
-        super(TrajEmbedding, self).__init__()
+class GPSEmbedding(nn.Module):
+    def __init__(self, embedding):
+        super(GPSEmbedding, self).__init__()
         self.embedding = embedding
-        self.tokenized = tokenized
-        if tokenized:
-            self.pad_emb = nn.Parameter(torch.zeros(emb_dim), requires_grad=False)
-            self.mask_emb = nn.Parameter(torch.randn(emb_dim))
-            self.special_embs = {
-                SPECIAL_TOKENS["pad"]: self.pad_emb,
-                SPECIAL_TOKENS["mask"]: self.mask_emb,
-            }
 
-    def forward(self, x, geo_data):
-        if not self.tokenized:
-            return self.embedding(x)
+    def forward(self, coordinates, **kwargs):
+        return self.embedding(coordinates)
 
-        masks = {idx: x == idx for idx in self.special_embs}
-        for mask in masks.values():
-            x[mask] = 0
 
-        x = self.embedding(x) if geo_data is None else self.embedding(geo_data.x, geo_data.edge_index)[x]
+class GridEmbedding(nn.Module):
+    def __init__(self, embedding, is_gnn, emb_dim):
+        super(GridEmbedding, self).__init__()
+        self.embedding = embedding
+        self.is_gnn = is_gnn
+        self.unk_emb = nn.Parameter(torch.randn(emb_dim))
 
-        for idx, mask in masks.items():
-            x[mask] = self.special_embs[idx]  # TODO 广播？
+    def forward(self, grid_ids, grid_geo_data: GeoData, special_pos, **kwargs):
+        unk_pos = grid_ids == SpecialToken.UNKNOWN
+        grid_ids[special_pos | unk_pos] = 0
+
+        if not self.is_gnn:
+            x = self.embedding(grid_ids)
+        else:
+            x = self.embedding(grid_geo_data.x, grid_geo_data.edge_index)[grid_ids]
+
+        x[unk_pos] = self.unk_emb
+        return x
+
+
+class RoadnetEmbedding(nn.Module):
+    def __init__(self, embedding, is_gnn, emb_dim):
+        super(RoadnetEmbedding, self).__init__()
+        self.embedding = embedding
+        self.is_gnn = is_gnn
+        self.unk_emb = nn.Parameter(torch.randn(emb_dim))
+
+    def forward(self, road_ids, road_geo_data: GeoData, special_pos, **kwargs):
+        unk_pos = road_ids == SpecialToken.UNKNOWN
+        road_ids[special_pos | unk_pos] = 0
+
+        if not self.is_gnn:
+            x = self.embedding(road_ids)
+        else:
+            x = self.embedding(road_geo_data.x, road_geo_data.edge_index)[road_ids]
+
+        x[unk_pos] = self.unk_emb
+        return x
+
+
+class TrajEmbedding(nn.Module):
+    def __init__(self, embeddings, emb_dim):
+        super(TrajEmbedding, self).__init__()
+        self.embeddings = nn.ModuleDict(embeddings)
+        self.pad_emb = nn.Parameter(torch.zeros(emb_dim), requires_grad=False)
+        self.mask_emb = nn.Parameter(torch.randn(emb_dim))
+
+    def forward(self, road_ids, **kwargs):
+        pad_pos = road_ids == SpecialToken.PAD
+        mask_pos = road_ids == SpecialToken.MASK
+
+        x = 0
+        for emb in self.embeddings.values():
+            x = x + emb(special_pos=pad_pos | mask_pos, road_ids=road_ids, **kwargs)
+
+        x[pad_pos] = self.pad_emb
+        x[mask_pos] = self.mask_emb
 
         return x
 
@@ -48,58 +92,96 @@ class TrajTransformer(nn.Module):
         self.pooling = pooling
         self.task_head = task_head
 
-    def forward(self, x, mask=None, geo_data: GeoData = None):
-        x = self.embedding(x, geo_data)
+    def forward(self, mask=None, **kwargs):
+        x = self.embedding(**kwargs)
         x = self.positional_encoding(x)
         x = self.encoder(x, mask)
-        if self.pooling:  # TODO 加CLS，取最后一个
+        if self.pooling:
             x = x.mean(dim=1)
+            # x = x[:, -1, :]
         x = self.task_head(x)
         return x
 
 
-def create_embedding(config):
-    data_config = config["data_config"]
+def pretrain_embedding(config, grid_geo_data, road_geo_data, overwrite=False):
     embedding_config = config["embedding_config"]
-    vocab_size = data_config["vocab_size"]
     emb_dim = embedding_config["emb_dim"]
 
-    match (data_config, embedding_config):
-        case {"data_form": "gps"}, _:
-            embedding = nn.Linear(2, emb_dim)
-        case {"data_form": "grid" | "roadnet"}, {"pre-trained": True, "embs_path": embs_path}:
-            with open(embs_path, "rb") as f:
-                embeddings = pickle.load(f)
-            embedding = nn.Embedding.from_pretrained(embeddings=embeddings, freeze=True)
-        case {"data_form": "grid" | "roadnet"}, {"emb_name": "normal"}:
-            embedding = nn.Embedding(vocab_size, emb_dim)
-        case {"data_form": "grid" | "roadnet"}, {"emb_name": "gat" | "gcn"}:
-            embedding = GNNWithEmbedding(vocab_size, emb_dim)
-        case _:
-            raise ValueError()
+    mapper: dict[str, type[EmbeddingTrainer]] = {
+        "node2vec": Node2VecTrainer,
+        "gat": GAETrainer,
+        "gcn": GAETrainer,
+    }
 
-    return TrajEmbedding(embedding, emb_dim, tokenized=data_config["data_form"] != "gps")
+    for token, data in zip(["grid", "roadnet"], [grid_geo_data, road_geo_data]):
+        sub_config = embedding_config[token]
+        emb_name = sub_config["emb_name"]
+        embs_path = sub_config["embs_path"]
+        if sub_config["pre-trained"] and (overwrite or not os.path.exists(embs_path)):
+            print("Pre-train embedding for", token)
+            trainer = mapper[emb_name](emb_name, emb_dim, embs_path, data)
+            trainer.train()
+
+
+def create_embedding(config):
+    embedding_config = config["embedding_config"]
+    emb_dim = embedding_config["emb_dim"]
+
+    embeddings = {}
+    for token in embedding_config["tokens"]:
+        sub_config = embedding_config[token]
+        match sub_config:
+            case {"emb_name": "linear"}:
+                embedding = nn.Linear(2, emb_dim)
+                is_gnn = False
+            case {"pre-trained": True, "embs_path": embs_path}:
+                with open(embs_path, "rb") as f:
+                    embs = pickle.load(f)
+                embedding = nn.Embedding.from_pretrained(embeddings=embs, freeze=True)
+                is_gnn = False
+            case {"emb_name": "embedding", "vocab_size": vocab_size}:
+                embedding = nn.Embedding(vocab_size, emb_dim)
+                is_gnn = False
+            case {"emb_name": "gat" | "gcn", "vocab_size": vocab_size}:
+                embedding = GNNWithEmbedding(sub_config["emb_name"], vocab_size, emb_dim)
+                is_gnn = True
+            case _:
+                raise ValueError()
+
+        match token:
+            case "gps":
+                embedding = GPSEmbedding(embedding)
+            case "grid":
+                embedding = GridEmbedding(embedding, is_gnn, emb_dim)
+            case "roadnet":
+                embedding = RoadnetEmbedding(embedding, is_gnn, emb_dim)
+            case _:
+                raise ValueError()
+
+        embeddings[token] = embedding
+    return TrajEmbedding(embeddings, emb_dim)
 
 
 def create_task_head(config):
     task_config = config["task_config"]
-    data_config = config["data_config"]
     embedding_config = config["embedding_config"]
     emb_dim = embedding_config["emb_dim"]
 
-    match (task_config, data_config):
-        case ({"task_name": "prediction"}, {"data_form": "gps"}):
-            return True, nn.Linear(emb_dim, 2)
-        case ({"task_name": "prediction"}, {"data_form": "grid", "vocab_size": vocab_size}):
-            return True, nn.Linear(emb_dim, vocab_size)
-        case ({"task_name": "similarity"}, {"data_form": "grid"}):
-            return True, nn.Identity()
-        case ({"task_name": "filling"}, {"data_form": "grid", "vocab_size": vocab_size}):
-            return False, nn.Linear(emb_dim, vocab_size)
-        case ({"task_name": "classification", "num_classes": num_classes}, {"data_form": "grid"}):
-            return True, nn.Linear(emb_dim, num_classes)
+    pooling = task_config["task_name"] != "filling"
+
+    match task_config:
+        case {"task_name": "prediction" | "filling", "token": "gps"}:
+            task_head = nn.Linear(emb_dim, 2)
+        case {"task_name": "prediction" | "filling", "token": "grid" | "roadnet" as token}:
+            task_head = nn.Linear(emb_dim, embedding_config[token]["vocab_size"])
+        case {"task_name": "similarity"}:
+            task_head = nn.Identity()
+        case {"task_name": "classification", "num_classes": num_classes}:
+            task_head = nn.Linear(emb_dim, num_classes)
         case _:
             raise ValueError()
+
+    return pooling, task_head
 
 
 def create_model(config):
