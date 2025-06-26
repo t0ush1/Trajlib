@@ -70,13 +70,13 @@ class TrajData:
         self.distorted: list[Trajectory] = []
         self.variants: dict[str, list[Trajectory]] = {
             "original": self.original,
-            "cropped": self.cropped,
-            "distorted": self.distorted,
+            # "cropped": self.cropped,
+            # "distorted": self.distorted,
         }
 
         self.grid: SimpleGridSystem = grid
         self.roadnet: RoadnetSystem = roadnet
-        fail_cnt = 0
+        unk_nums = []
 
         threshold, window_size, stride = window
 
@@ -88,12 +88,10 @@ class TrajData:
                     coordinates = self.__distort__(coordinates)
 
                 grid_ids = self.__map_grid__(coordinates)
-                # road_ids = self.__map_roadnet__(coordinates)
-                road_ids = [SpecialToken.UNKNOWN] * len(coordinates)
-                # if len(road_ids) != len(coordinates):
-                #     fail_cnt += 1
-                #     road_ids += [SpecialToken.UNKNOWN] * (len(coordinates) - len(road_ids))
-                #     continue
+                road_ids = self.__map_roadnet__(coordinates)
+                if len(grid_ids) < len(coordinates):
+                    unk_nums.append([len(coordinates) - len(grid_ids), len(coordinates)])
+                road_ids += [SpecialToken.UNKNOWN] * (len(coordinates) - len(road_ids))
 
                 trajectory = Trajectory(i, coordinates, grid_ids, road_ids, timestamps, attributes)
 
@@ -107,7 +105,8 @@ class TrajData:
 
                     var_trajs.append(traj)
 
-            # print("fail_cnt:", fail_cnt)
+            print(len(unk_nums))
+            print(*unk_nums, sep="\n")
 
     def __len__(self):
         return len(self.original)

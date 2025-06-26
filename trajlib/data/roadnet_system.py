@@ -114,7 +114,7 @@ class RoadnetSystem:
         matcher = DistanceMatcher(
             self.map_con,
             max_dist=500,
-            max_dist_init=500,
+            max_dist_init=300,
             min_prob_norm=0.01,
             non_emitting_length_factor=0.95,
             obs_noise=50,
