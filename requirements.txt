@@ -1,0 +1,9 @@
+accelerate==1.2.1
+coord_convert==0.2.1
+geopandas==1.0.1
+leuvenmapmatching==1.1.4
+torch==2.5.1
+torch_geometric==2.0.4
+tqdm==4.66.5
+transbigdata==0.5.3
+wandb==0.16.6
