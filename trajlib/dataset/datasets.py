@@ -109,6 +109,7 @@ class ClassificationDataset(Dataset):
         sorted_values = sorted(counter.keys(), key=lambda c: -counter[c])
         self.class_mapping = {cls: idx for idx, cls in enumerate(sorted_values)}
         self.labels = [self.class_mapping[val] for val in class_values]
+        print("[Dataset] classification counter:", counter)
 
     def __len__(self):
         return len(self.labels)

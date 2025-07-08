@@ -12,8 +12,7 @@ from trajlib.data.roadnet_system import RoadnetSystem
 class SpecialToken(float, Enum):
     PAD = -1
     MASK = -2
-    UNKNOWN = -3
-    IGNORE = -100
+    UNK = -100
 
 
 class Trajectory:
@@ -70,43 +69,46 @@ class TrajData:
         self.distorted: list[Trajectory] = []
         self.variants: dict[str, list[Trajectory]] = {
             "original": self.original,
-            # "cropped": self.cropped,
-            # "distorted": self.distorted,
+            "cropped": self.cropped,
+            "distorted": self.distorted,
         }
 
         self.grid: SimpleGridSystem = grid
         self.roadnet: RoadnetSystem = roadnet
-        unk_nums = []
 
         threshold, window_size, stride = window
 
-        for var_name, var_trajs in self.variants.items():
-            for i, (coordinates, timestamps, attributes) in tqdm(
-                enumerate(trajectories), desc=f"Processing {var_name} trajectories", total=len(trajectories)
-            ):
-                if var_name == "distorted":
-                    coordinates = self.__distort__(coordinates)
+        all_coords = []
+        for coords, _, _ in trajectories:
+            all_coords.extend(coords)
+        all_coords = torch.tensor(all_coords)
+        coords_mean = all_coords.mean(dim=0)
+        coords_std = all_coords.std(dim=0)
 
-                grid_ids = self.__map_grid__(coordinates)
-                road_ids = self.__map_roadnet__(coordinates)
-                if len(grid_ids) < len(coordinates):
-                    unk_nums.append([len(coordinates) - len(grid_ids), len(coordinates)])
-                road_ids += [SpecialToken.UNKNOWN] * (len(coordinates) - len(road_ids))
+        def generator(traj_id, coordinates, timestamps, attributes):
+            grid_ids = self.__map_grid__(coordinates)
+            road_ids = self.__map_roadnet__(coordinates)
+            
+            self.unk_nums.append(road_ids.count(SpecialToken.UNK))
+            
+            norm_coords = ((torch.tensor(coordinates) - coords_mean) / coords_std).tolist()
+            trajectory = Trajectory(traj_id, norm_coords, grid_ids, road_ids, timestamps, attributes)
+            for pos in range(0, max(1, len(trajectory) - window_size), stride):
+                if len(trajectory) - pos < threshold:
+                    break
+                yield trajectory[pos : pos + window_size]
 
-                trajectory = Trajectory(i, coordinates, grid_ids, road_ids, timestamps, attributes)
-
-                for pos in range(0, max(1, len(trajectory) - window_size), stride):
-                    if len(trajectory) - pos < threshold:
-                        break
-                    traj = trajectory[pos : pos + window_size]
-
-                    if var_name == "cropped":
-                        traj = self.__crop__(traj)
-
-                    var_trajs.append(traj)
-
-            print(len(unk_nums))
-            print(*unk_nums, sep="\n")
+        self.unk_nums = []
+        for i, (coordinates, timestamps, attributes) in tqdm(
+            enumerate(trajectories), desc=f"Generating trajectories", total=len(trajectories)
+        ):
+            for traj in generator(i, coordinates, timestamps, attributes):
+                self.original.append(traj)
+                self.cropped.append(self.__crop__(traj))
+            for traj in generator(i, self.__distort__(coordinates), timestamps, attributes):
+                self.distorted.append(traj)
+        print(f"[TrajData] original traj num with UNK: {len(self.unk_nums)}")
+        print("[TrajData] UNK num / tot num:", *self.unk_nums, sep="\n")
 
     def __len__(self):
         return len(self.original)
@@ -144,7 +146,9 @@ class TrajData:
         return grid_ids
 
     def __map_roadnet__(self, coordinates):
-        return self.roadnet.get_road_osmids_for_points(coordinates)[0]
+        road_ids = self.roadnet.get_road_osmids_for_points(coordinates)[0]
+        road_ids += [SpecialToken.UNK] * (len(coordinates) - len(road_ids))
+        return road_ids
 
 
 class GraphData:
@@ -152,6 +156,9 @@ class GraphData:
         self.nodes: list[int] = nodes
         self.neighbors: list[list[int]] = neighbors
         self.features: list[list[float]] = features
+
+    def __len__(self):
+        return len(self.nodes)
 
     def to_geo_data(self, index_as_features=True) -> GeoData:
         x = torch.tensor(self.nodes) if index_as_features else torch.tensor(self.features).float()

@@ -44,13 +44,13 @@ def autoregressive_collate_fn(batch):
 
 
 class FillingTrainer(BaseTrainer):
-    def __init__(self, *args, sub_task, token, grid_vocab_size, road_vocab_size):
+    def __init__(self, *args, sub_task, tokens, grid_vocab_size, road_vocab_size):
         collate_fns = {
             "mlm": partial(mlm_collate_fn, grid_vocab_size=grid_vocab_size, road_vocab_size=road_vocab_size),
             "autoregressive": autoregressive_collate_fn,
         }
         super().__init__(*args, collate_fn=collate_fns[sub_task])
-        self.token = token
+        self.tokens = tokens
 
     def train(self, epoch):
         self.model.train()
@@ -59,9 +59,9 @@ class FillingTrainer(BaseTrainer):
             self.train_loader, disable=not self.accelerator.is_local_main_process, desc=f"Epoch {epoch+1} Train"
         ):
             output = self._call_model(input, mask=mask)
-            label = self._get_tokens(label, self.token)
+            label = self._get_seqs(label, self.tokens)
 
-            loss = self.criterion(output[valid_pos], label[valid_pos])
+            loss = self.criterion(output, label, self.tokens, valid_pos=valid_pos)
             self.optimizer.zero_grad()
             self.accelerator.backward(loss)
             self.optimizer.step()
@@ -78,7 +78,7 @@ class FillingTrainer(BaseTrainer):
                 self.val_loader, disable=not self.accelerator.is_local_main_process, desc=f"Epoch {epoch+1} Valid"
             ):
                 output = self._call_model(input, mask=mask)
-                label = self._get_tokens(label, self.token)
+                label = self._get_seqs(label, self.tokens)
 
                 output = self.accelerator.pad_across_processes(output, dim=1)
                 label = self.accelerator.pad_across_processes(label, dim=1)
@@ -88,7 +88,7 @@ class FillingTrainer(BaseTrainer):
                 label = self.accelerator.gather_for_metrics(label)
                 valid_pos = self.accelerator.gather_for_metrics(valid_pos)
 
-                loss = self.criterion(output[valid_pos], label[valid_pos])
+                loss = self.criterion(output, label, self.tokens, valid_pos=valid_pos)
 
                 val_loss += loss.item()
             val_loss /= len(self.val_loader)

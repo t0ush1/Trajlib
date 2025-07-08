@@ -10,15 +10,15 @@ def create_trainer(config, accelerator, model, dataset, grid_geo_data, road_geo_
     args = config["trainer_config"], accelerator, model, dataset, grid_geo_data, road_geo_data
 
     match task_config:
-        case {"task_name": "prediction", "token": token}:
-            return PredictionTrainer(*args, token=token)
+        case {"task_name": "prediction", "tokens": tokens}:
+            return PredictionTrainer(*args, tokens=tokens)
         case {"task_name": "similarity", "sub-task": sub_task}:
             return SimilarityTrainer(*args, sub_task=sub_task)
-        case {"task_name": "filling", "sub-task": sub_task, "token": token}:
+        case {"task_name": "filling", "sub-task": sub_task, "tokens": tokens}:
             return FillingTrainer(
                 *args,
                 sub_task=sub_task,
-                token=token,
+                tokens=tokens,
                 grid_vocab_size=embedding_config["grid"]["vocab_size"],
                 road_vocab_size=embedding_config["roadnet"]["vocab_size"],
             )

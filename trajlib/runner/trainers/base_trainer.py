@@ -8,6 +8,7 @@ from torch.nn.utils.rnn import pad_sequence
 
 from trajlib.data.data import SpecialToken
 from trajlib.runner.utils.early_stopping import EarlyStopping
+from trajlib.runner.utils.multi_token_loss import MultiTokenLoss
 
 
 def pad_trajectory(traj_batch):
@@ -52,9 +53,11 @@ class BaseTrainer:
             self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=10, gamma=0.1)
 
         if trainer_config["loss_function"] == "cross_entropy":
-            self.criterion = nn.CrossEntropyLoss(ignore_index=-100)
+            self.criterion = nn.CrossEntropyLoss()
         elif trainer_config["loss_function"] == "mse":
             self.criterion = nn.MSELoss()
+        elif trainer_config["loss_function"] == "multi_token":
+            self.criterion = MultiTokenLoss()
 
         self.early_stopping = EarlyStopping(patience=7, delta=0)
 
@@ -98,15 +101,11 @@ class BaseTrainer:
         )
         return output
 
-    def _get_tokens(self, traj, token):
+    def _get_seqs(self, traj, tokens):
         coords, grids, roads, times = traj
-        tokens = {
-            "gps": coords,
-            "grid": grids,
-            "roadnet": roads,
-            "timestamp": times,
-        }[token]
-        return tokens.to(self.accelerator.device)
+        device = self.accelerator.device
+        mapper = {"gps": coords, "grid": grids, "roadnet": roads, "time": times}
+        return {token: mapper[token].to(device) for token in tokens}
 
     def train(self, epoch):
         raise NotImplementedError()

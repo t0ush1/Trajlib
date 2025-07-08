@@ -31,7 +31,7 @@ def build_grid(coord_trajs, step):
 
 
 def build_roadnet(coord_trajs, road_type):
-    return RoadnetSystem(bounds=get_bounds(coord_trajs), cache_dir="./resource/cache", network_type=road_type)
+    return RoadnetSystem(bounds=get_bounds(coord_trajs), cache_dir="./resource/osm_cache", network_type=road_type)
 
 
 def create_data(config, overwrite=False):

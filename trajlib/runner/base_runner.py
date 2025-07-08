@@ -1,5 +1,7 @@
+from datetime import timedelta
 import random
 import accelerate
+from accelerate import InitProcessGroupKwargs, DistributedDataParallelKwargs
 import numpy as np
 import torch
 import wandb
@@ -19,16 +21,26 @@ class BaseRunner:
         accelerate.utils.set_seed(fix_seed)
 
         self.config = config
-        self.accelerator = accelerate.Accelerator(step_scheduler_with_optimizer=False)
+        self.accelerator = accelerate.Accelerator(
+            step_scheduler_with_optimizer=False,  # scheduler 只有一个进程调用
+            kwargs_handlers=[
+                InitProcessGroupKwargs(timeout=timedelta(seconds=3600)),  # 防止数据处理或预训练超时
+                # DistributedDataParallelKwargs(find_unused_parameters=True),  # 允许不使用的参数
+            ],
+        )
 
         if self.accelerator.is_local_main_process:
             create_data(config, overwrite=False)
         self.accelerator.wait_for_everyone()
-
         traj_data, grid_graph_data, road_graph_data = load_data(config)
+        self.accelerator.print(
+            f"[Runner] data created, traj size: {len(traj_data)}, grid size: {len(grid_graph_data)}, road size: {len(road_graph_data)}"
+        )
+
         self.dataset = create_dataset(config, traj_data)
         self.grid_geo_data = grid_graph_data.to_geo_data()
         self.road_geo_data = road_graph_data.to_geo_data()
+        self.accelerator.print(f"[Runner] dataset created, dataset size: {[len(d) for d in self.dataset]}")
 
         if self.accelerator.is_local_main_process:
             pretrain_embedding(config, self.grid_geo_data, self.road_geo_data, overwrite=False)
@@ -40,12 +52,12 @@ class BaseRunner:
             for name, param in self.model.named_parameters():
                 if not name.startswith("task_head"):
                     param.requires_grad = False
-            if self.accelerator.is_local_main_process:
-                print("Load model successfully")
+        self.accelerator.print("[Runner] model created")
 
         self.trainer = create_trainer(
             config, self.accelerator, self.model, self.dataset, self.grid_geo_data, self.road_geo_data
         )
+        self.accelerator.print(f"[Runner] trainer created")
 
         if self.accelerator.is_local_main_process:
             # TODO
@@ -93,8 +105,7 @@ class BaseRunner:
 
             early_stopping_info = self.trainer.early_stopping(val_loss)
             if early_stopping_info["is_stop"]:
-                if self.accelerator.is_local_main_process:
-                    print(f"Early stopping in epoch {epoch + 1}")
+                self.accelerator.print(f"Early stopping in epoch {epoch + 1}")
                 break
 
             self.trainer.scheduler.step()
@@ -106,6 +117,6 @@ class BaseRunner:
             self._log_results({f"Final {k}": v for k, v in test_results.items()})
             if self.config["task_config"]["train_mode"] == "pre-train":
                 self._save_model()
-                print("Save model successfully")
+                print("[Runner] model saved")
 
         wandb.finish()
